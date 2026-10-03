@@ -15,7 +15,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Demo mode ON until the real Qloo key arrives (UI shows "demo mode" badge).
+      # When QLOO_API_KEY is set in the dashboard, flip this to "0".
       - key: QLOO_MOCK
-        value: "0"
-      # QLOO_API_KEY: set in the Render dashboard (never commit it)
+        value: "1"
+      # QLOO_API_KEY: set in the Render dashboard when the event-issued key
+      # arrives by email (never commit it, never paste it in chat).
       # QLOO_API_URL defaults to the hackathon env: https://hackathon.api.qloo.com/v2
