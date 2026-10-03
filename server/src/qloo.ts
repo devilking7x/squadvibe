@@ -110,6 +110,55 @@ export function qlooMode(): "mock" | "live" | "none" {
   return API_KEY ? "live" : "none";
 }
 
+const MOCK_TRENDS: Record<string, TasteHit[]> = {
+  movie: [
+    { name: "[MOCK] Trending: Sci-Fi Revival", entityId: "t1", category: "movie", description: "[MOCK] Space operas spiking this week.", popularity: 0.99 },
+  ],
+  restaurant: [
+    { name: "[MOCK] Trending: Ramen Wave", entityId: "t2", category: "restaurant", description: "[MOCK] Ramen spots blowing up in the city.", popularity: 0.95 },
+  ],
+  music: [
+    { name: "[MOCK] Trending: Indie Dawn", entityId: "t3", category: "music", description: "[MOCK] Bedroom pop taking over playlists.", popularity: 0.94 },
+  ],
+};
+
+/** Qloo Trends API — what's hot right now in a category. */
+export async function trending(
+  category: string,
+  location: string,
+  limit = 3
+): Promise<TasteHit[]> {
+  if (MOCK) return (MOCK_TRENDS[category] ?? []).slice(0, limit);
+  if (!API_KEY) throw new Error("QLOO_API_KEY not configured");
+  const params = new URLSearchParams({
+    "filter.type": URNS[category] ?? URNS.movie,
+    limit: String(limit),
+  });
+  if (location.trim()) params.set("filter.location.query", location.trim());
+  const res = await fetch(`${BASE}/trends?${params}`, {
+    headers: headers(),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) throw new Error(`Qloo trends ${res.status}`);
+  const data = (await res.json()) as {
+    results?: { entities?: Array<Record<string, unknown>> };
+  };
+  return (data.results?.entities ?? [])
+    .slice(0, limit)
+    .map((e) => mapEntity(e, category));
+}
+
+/**
+ * Vibe match score: how well a pick fits the squad.
+ * Heuristic over Qloo popularity + signal coverage — 0-100.
+ * (With live Qloo data, popularity reflects real cultural weight.)
+ */
+export function vibeScore(hit: TasteHit, memberCount: number): number {
+  const pop = Math.round(hit.popularity * 70);
+  const coverage = Math.min(30, memberCount * 10);
+  return Math.min(99, pop + coverage);
+}
+
 /**
  * Core SquadVibe mechanic: resolve EVERY member's favorites to Qloo entity
  * ids, then ask Insights for picks matching the COMBINED taste — the

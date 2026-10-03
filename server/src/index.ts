@@ -3,7 +3,9 @@ import cors from "cors";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { qlooMode, qlooReady, squadPlan } from "./qloo.js";
+import { broadcast, subscribe } from "./events.js";
+import { buildItinerary } from "./itinerary.js";
+import { qlooMode, qlooReady, squadPlan, trending, vibeScore } from "./qloo.js";
 import { addMember, createSquad, getSquad, publicSquad } from "./store.js";
 
 const app = express();
@@ -35,6 +37,31 @@ app.get("/api/squads/:id", (req, res) => {
   res.json({ squad: publicSquad(s), qloo: qlooMode() });
 });
 
+// Live squad room — Server-Sent Events
+app.get("/api/squads/:id/stream", (req, res) => {
+  const s = getSquad(req.params.id);
+  if (!s) {
+    res.status(404).json({ error: "squad not found" });
+    return;
+  }
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+  });
+  res.write(`data: ${JSON.stringify({ type: "ping" })}\n\n`);
+  const unsub = subscribe(s.id, (ev) => {
+    res.write(`data: ${JSON.stringify(ev)}\n\n`);
+  });
+  const keepAlive = setInterval(() => {
+    res.write(`data: ${JSON.stringify({ type: "ping" })}\n\n`);
+  }, 25000);
+  req.on("close", () => {
+    clearInterval(keepAlive);
+    unsub();
+  });
+});
+
 // Join squad: add/update a member's taste
 app.post("/api/squads/:id/members", (req, res) => {
   const { name, favorites } = req.body ?? {};
@@ -47,6 +74,12 @@ app.post("/api/squads/:id/members", (req, res) => {
     res.status(404).json({ error: "squad not found or favorites empty" });
     return;
   }
+  const member = s.members[s.members.length - 1];
+  broadcast(s.id, {
+    type: "member_joined",
+    member: member.name,
+    memberCount: s.members.length,
+  });
   res.json({ squad: publicSquad(s) });
 });
 
@@ -69,9 +102,47 @@ app.post("/api/squads/:id/plan", async (req, res) => {
     const favorites = s.members.flatMap((m) =>
       m.favorites.map((f) => ({ member: m.name, favorite: f }))
     );
-    const plan = await squadPlan(favorites, s.location, s.vibe);
+    const [plan, trends] = await Promise.all([
+      squadPlan(favorites, s.location, s.vibe),
+      Promise.all([
+        trending("movie", "", 1).catch(() => []),
+        trending("restaurant", s.location, 1).catch(() => []),
+        trending("music", "", 1).catch(() => []),
+      ]),
+    ]);
+
+    // Vibe scores per pick
+    const scored = Object.fromEntries(
+      Object.entries(plan).map(([cat, hits]) => [
+        cat,
+        hits.map((h) => ({ ...h, vibeScore: vibeScore(h, s.members.length) })),
+      ])
+    );
+
+    // Trending twist: one fresh pick per category
+    const twist = {
+      movie: trends[0][0] ?? null,
+      restaurant: trends[1][0] ?? null,
+      music: trends[2][0] ?? null,
+    };
+
+    // AI evening itinerary
+    const itinerary = await buildItinerary(
+      s.name,
+      s.vibe,
+      s.location,
+      plan.movie,
+      plan.restaurant,
+      plan.music
+    );
+
+    broadcast(s.id, { type: "plan_ready", memberCount: s.members.length });
+
     res.json({
-      plan,
+      plan: scored,
+      trendingTwist: twist,
+      itinerary: itinerary.stops,
+      itineraryAI: itinerary.ai,
       qloo: qlooMode(),
       members: s.members.length,
       generatedAt: new Date().toISOString(),

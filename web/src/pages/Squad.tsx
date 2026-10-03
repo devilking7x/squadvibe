@@ -9,6 +9,7 @@ export default function SquadPage({ id, nav }: { id: string; nav: (h: string) =>
   const [busy, setBusy] = useState(false);
   const [planning, setPlanning] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [liveMsg, setLiveMsg] = useState("");
 
   const load = async () => {
     try {
@@ -21,6 +22,18 @@ export default function SquadPage({ id, nav }: { id: string; nav: (h: string) =>
 
   useEffect(() => {
     load();
+    // Live room: refresh when anyone joins
+    const stop = api.stream(id, (ev) => {
+      if (ev.type === "member_joined") {
+        setLiveMsg(`🎉 ${ev.member} joined the squad!`);
+        load();
+        setTimeout(() => setLiveMsg(""), 4000);
+      } else if (ev.type === "plan_ready") {
+        setLiveMsg("✨ Squad plan is ready!");
+        setTimeout(() => setLiveMsg(""), 4000);
+      }
+    });
+    return stop;
   }, [id]);
 
   const join = async () => {
@@ -86,9 +99,20 @@ export default function SquadPage({ id, nav }: { id: string; nav: (h: string) =>
       </div>
 
       {/* members */}
-      <h2 className="font-display font-bold text-lg mb-3">
-        Squad ({squad.members.length})
-      </h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-display font-bold text-lg">
+          Squad ({squad.members.length})
+        </h2>
+        <span className="chip !bg-green-500/15 !text-green-400">
+          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block" />
+          live room
+        </span>
+      </div>
+      {liveMsg && (
+        <div className="card !border-green-400/40 !bg-green-500/10 mb-4 text-center font-medium">
+          {liveMsg}
+        </div>
+      )}
       {squad.members.length === 0 && (
         <p className="text-white/40 text-sm mb-4">No members yet — add your taste below 👇</p>
       )}

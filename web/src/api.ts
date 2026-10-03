@@ -6,6 +6,23 @@ export interface TasteHit {
   description: string;
   popularity: number;
   matchedFavorites?: string[];
+  vibeScore?: number;
+}
+
+export interface ItineraryStop {
+  time: string;
+  emoji: string;
+  title: string;
+  detail: string;
+}
+
+export interface PlanResult {
+  plan: Plan;
+  trendingTwist: { movie: TasteHit | null; restaurant: TasteHit | null; music: TasteHit | null };
+  itinerary: ItineraryStop[];
+  itineraryAI: boolean;
+  qloo: string;
+  members: number;
 }
 
 export interface Member {
@@ -55,8 +72,20 @@ export const api = {
       body: JSON.stringify({ name, favorites }),
     }),
   plan: (id: string) =>
-    req<{ plan: Plan; qloo: string; members: number }>(
+    req<PlanResult>(
       `/api/squads/${encodeURIComponent(id)}/plan`,
       { method: "POST" }
     ),
+  /** Live squad room events (SSE). Returns a cleanup function. */
+  stream: (id: string, onEvent: (ev: { type: string; member?: string; memberCount?: number }) => void) => {
+    const es = new EventSource(`/api/squads/${encodeURIComponent(id)}/stream`);
+    es.onmessage = (msg) => {
+      try {
+        onEvent(JSON.parse(msg.data));
+      } catch {
+        /* ignore */
+      }
+    };
+    return () => es.close();
+  },
 };

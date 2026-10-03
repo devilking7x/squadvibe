@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type Plan, type TasteHit } from "../api";
+import { api, type ItineraryStop, type Plan, type PlanResult, type TasteHit } from "../api";
 
 const SECTIONS = [
   { key: "movie", emoji: "🎬", title: "Watch together" },
@@ -7,22 +7,34 @@ const SECTIONS = [
   { key: "music", emoji: "🎵", title: "Vibe together" },
 ] as const;
 
+function cleanName(n: string) {
+  return n.replace(/^\[MOCK\]\s*/, "");
+}
+
+function ScoreBar({ score }: { score: number }) {
+  return (
+    <div className="flex items-center gap-2 mt-2">
+      <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-neon to-hot transition-all"
+          style={{ width: `${score}%` }}
+        />
+      </div>
+      <span className="text-xs font-bold text-neon whitespace-nowrap">{score}% vibe match</span>
+    </div>
+  );
+}
+
 function PickCard({ hit, rank }: { hit: TasteHit; rank: number }) {
   const medals = ["🥇", "🥈", "🥉"];
   return (
     <div className="card">
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="font-display font-bold text-lg">
-          {medals[rank] ?? "✨"} {hit.name.replace(/^\[MOCK\]\s*/, "")}
-        </h3>
-        {hit.popularity > 0 && (
-          <span className="chip whitespace-nowrap">
-            🔥 {Math.round(hit.popularity * 100)}% match
-          </span>
-        )}
-      </div>
+      <h3 className="font-display font-bold text-lg">
+        {medals[rank] ?? "✨"} {cleanName(hit.name)}
+      </h3>
+      {typeof hit.vibeScore === "number" && <ScoreBar score={hit.vibeScore} />}
       {hit.description && (
-        <p className="text-white/55 text-sm mt-2">{hit.description.replace(/^\[MOCK\]\s*/, "")}</p>
+        <p className="text-white/55 text-sm mt-2">{cleanName(hit.description)}</p>
       )}
       {hit.matchedFavorites && hit.matchedFavorites.length > 0 && (
         <div className="mt-3">
@@ -40,18 +52,73 @@ function PickCard({ hit, rank }: { hit: TasteHit; rank: number }) {
   );
 }
 
+function Itinerary({ stops, ai }: { stops: ItineraryStop[]; ai: boolean }) {
+  if (stops.length === 0) return null;
+  return (
+    <div className="mb-10">
+      <div className="flex items-center gap-2 mb-4">
+        <h2 className="font-display font-bold text-xl">🗓️ Your perfect evening</h2>
+        {ai && <span className="chip !bg-gold/15 !text-gold">AI-planned</span>}
+      </div>
+      <div className="relative pl-8">
+        <div className="absolute left-3 top-2 bottom-2 w-0.5 bg-gradient-to-b from-neon to-hot opacity-40" />
+        <div className="space-y-4">
+          {stops.map((s, i) => (
+            <div key={i} className="relative">
+              <div className="absolute -left-8 top-1 w-6 h-6 rounded-full bg-grape border border-neon/50 flex items-center justify-center text-sm">
+                {s.emoji}
+              </div>
+              <div className="card !p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-bold text-hot">{s.time}</span>
+                  <span className="font-display font-bold">{s.title}</span>
+                </div>
+                <p className="text-white/55 text-sm">{s.detail}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrendingTwist({ twist }: { twist: PlanResult["trendingTwist"] }) {
+  const items = [
+    { hit: twist.movie, label: "🎬 Trending film" },
+    { hit: twist.restaurant, label: "🍽️ Trending spot" },
+    { hit: twist.music, label: "🎵 Trending sound" },
+  ].filter((x) => x.hit);
+  if (items.length === 0) return null;
+  return (
+    <div className="mb-10">
+      <h2 className="font-display font-bold text-xl mb-1">🔥 Trending twist</h2>
+      <p className="text-white/45 text-sm mb-4">
+        Fresh from Qloo Trends — swap one of these in if you're feeling adventurous.
+      </p>
+      <div className="grid md:grid-cols-3 gap-3">
+        {items.map(({ hit, label }) => (
+          <div key={label} className="card !p-4">
+            <p className="text-xs text-white/40 mb-1">{label}</p>
+            <p className="font-bold">{cleanName(hit!.name)}</p>
+            {hit!.description && (
+              <p className="text-white/50 text-xs mt-1">{cleanName(hit!.description)}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => void }) {
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [meta, setMeta] = useState<{ qloo: string; members: number } | null>(null);
+  const [result, setResult] = useState<PlanResult | null>(null);
   const [err, setErr] = useState("");
 
   useEffect(() => {
     api
       .plan(id)
-      .then((r) => {
-        setPlan(r.plan);
-        setMeta({ qloo: r.qloo, members: r.members });
-      })
+      .then(setResult)
       .catch((e) => setErr((e as Error).message));
   }, [id]);
 
@@ -64,7 +131,7 @@ export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => 
         </button>
       </div>
     );
-  if (!plan)
+  if (!result)
     return (
       <div className="text-center pt-24 px-4">
         <div className="text-5xl mb-4 animate-bounce">🧠</div>
@@ -73,17 +140,20 @@ export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => 
       </div>
     );
 
+  const plan: Plan = result.plan;
   return (
     <div className="max-w-2xl mx-auto px-4 pt-10 pb-20">
       <div className="text-center mb-8">
         <div className="chip mb-4">
-          {meta?.qloo === "mock" ? "🧪 demo mode" : "🧬 Qloo taste graph"} · {meta?.members} member
-          {(meta?.members ?? 0) > 1 ? "s" : ""}
+          {result.qloo === "mock" ? "🧪 demo mode" : "🧬 Qloo taste graph"} · {result.members} member
+          {result.members > 1 ? "s" : ""}
         </div>
         <h1 className="font-display text-4xl font-extrabold">
           Your squad's <span className="text-transparent bg-clip-text bg-gradient-to-r from-neon to-hot">perfect plan</span>
         </h1>
       </div>
+
+      <Itinerary stops={result.itinerary} ai={result.itineraryAI} />
 
       {SECTIONS.map((s) => (
         <div key={s.key} className="mb-8">
@@ -100,6 +170,8 @@ export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => 
           </div>
         </div>
       ))}
+
+      <TrendingTwist twist={result.trendingTwist} />
 
       <div className="flex gap-3 justify-center mt-10">
         <button className="btn-ghost" onClick={() => nav(`#/s/${id}`)}>
