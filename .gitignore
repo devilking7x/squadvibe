@@ -1,0 +1,7 @@
+node_modules/
+dist/
+server/web/
+server/squadvibe-data.json
+.env
+*.log
+.DS_Store
