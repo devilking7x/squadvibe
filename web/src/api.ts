@@ -76,6 +76,11 @@ export const api = {
       `/api/squads/${encodeURIComponent(id)}/plan`,
       { method: "POST" }
     ),
+  /** Saved plan (shareable, consistent). Throws 404 if not generated yet. */
+  getPlan: (id: string) =>
+    req<PlanResult>(`/api/squads/${encodeURIComponent(id)}/plan`),
+  /** One-click demo squad for instant judge-friendly magic. */
+  demo: () => req<{ squad: Squad }>("/api/demo", { method: "POST" }),
   /** Live squad room events (SSE). Returns a cleanup function. */
   stream: (id: string, onEvent: (ev: { type: string; member?: string; memberCount?: number }) => void) => {
     const es = new EventSource(`/api/squads/${encodeURIComponent(id)}/stream`);

@@ -6,7 +6,15 @@ import { fileURLToPath } from "node:url";
 import { broadcast, subscribe } from "./events.js";
 import { buildItinerary } from "./itinerary.js";
 import { qlooMode, qlooReady, squadPlan, trending, vibeScore } from "./qloo.js";
-import { addMember, createSquad, getSquad, publicSquad } from "./store.js";
+import {
+  addMember,
+  createDemoSquad,
+  createSquad,
+  getSavedPlan,
+  getSquad,
+  publicSquad,
+  savePlan,
+} from "./store.js";
 
 const app = express();
 app.use(cors());
@@ -83,6 +91,12 @@ app.post("/api/squads/:id/members", (req, res) => {
   res.json({ squad: publicSquad(s) });
 });
 
+// One-click demo squad — judges see the magic in 10 seconds
+app.post("/api/demo", (_req, res) => {
+  const s = createDemoSquad();
+  res.json({ squad: publicSquad(s) });
+});
+
 // Generate the squad plan — the Qloo-powered intersection
 app.post("/api/squads/:id/plan", async (req, res) => {
   const s = getSquad(req.params.id);
@@ -138,7 +152,7 @@ app.post("/api/squads/:id/plan", async (req, res) => {
 
     broadcast(s.id, { type: "plan_ready", memberCount: s.members.length });
 
-    res.json({
+    const saved = {
       plan: scored,
       trendingTwist: twist,
       itinerary: itinerary.stops,
@@ -146,10 +160,27 @@ app.post("/api/squads/:id/plan", async (req, res) => {
       qloo: qlooMode(),
       members: s.members.length,
       generatedAt: new Date().toISOString(),
-    });
+    };
+    savePlan(s.id, saved);
+    res.json(saved);
   } catch (e) {
     res.status(502).json({ error: `plan failed: ${(e as Error).message}` });
   }
+});
+
+// Get the saved plan (shareable, consistent) — 404 if not generated yet
+app.get("/api/squads/:id/plan", (req, res) => {
+  const s = getSquad(req.params.id);
+  if (!s) {
+    res.status(404).json({ error: "squad not found" });
+    return;
+  }
+  const saved = getSavedPlan(s.id);
+  if (!saved) {
+    res.status(404).json({ error: "no plan yet — generate one first" });
+    return;
+  }
+  res.json(saved);
 });
 
 // Serve the built web app (production)

@@ -8,6 +8,20 @@ export interface Member {
   joinedAt: string;
 }
 
+export interface SavedPlan {
+  // Stored as plain JSON (serializable); typed loosely on purpose.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  plan: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  trendingTwist: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  itinerary: any;
+  itineraryAI: boolean;
+  qloo: string;
+  members: number;
+  generatedAt: string;
+}
+
 export interface Squad {
   id: string;
   code: string; // short share code, e.g. "KX7Q2M"
@@ -16,6 +30,7 @@ export interface Squad {
   location: string;
   createdAt: string;
   members: Member[];
+  savedPlan?: SavedPlan;
 }
 
 const DATA_FILE =
@@ -101,8 +116,40 @@ export function addMember(id: string, name: string, favorites: string[]): Squad 
 }
 
 export function publicSquad(s: Squad) {
-  const { ...pub } = s;
-  return pub;
+  const { savedPlan, ...pub } = s;
+  return { ...pub, hasPlan: !!savedPlan };
+}
+
+export function savePlan(id: string, plan: SavedPlan): boolean {
+  const s = squads.get(id);
+  if (!s) return false;
+  s.savedPlan = plan;
+  persist();
+  return true;
+}
+
+export function getSavedPlan(id: string): SavedPlan | null {
+  return squads.get(id)?.savedPlan ?? null;
+}
+
+// --- Demo squad: one-click judge-friendly seed ---
+const DEMO_MEMBERS: Array<{ name: string; favorites: string[] }> = [
+  { name: "Aarav", favorites: ["Interstellar", "A.R. Rahman", "biryani"] },
+  { name: "Diya", favorites: ["Dune", "The Weeknd", "pizza"] },
+  { name: "Kabir", favorites: ["3 Idiots", "Prateek Kuhad", "momos"] },
+];
+
+export function createDemoSquad(): Squad {
+  const s = createSquad("Demo: Friday Night", "party", "Pune");
+  for (const m of DEMO_MEMBERS) {
+    s.members.push({
+      name: m.name,
+      favorites: m.favorites,
+      joinedAt: new Date().toISOString(),
+    });
+  }
+  persist();
+  return s;
 }
 
 load();

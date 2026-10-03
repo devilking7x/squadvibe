@@ -4,6 +4,7 @@ import { api } from "../api";
 export default function Landing({ nav }: { nav: (h: string) => void }) {
   const [code, setCode] = useState("");
   const [joinErr, setJoinErr] = useState("");
+  const [demoBusy, setDemoBusy] = useState(false);
 
   const join = async () => {
     setJoinErr("");
@@ -14,6 +15,18 @@ export default function Landing({ nav }: { nav: (h: string) => void }) {
       nav(`#/s/${squad.id}`);
     } catch {
       setJoinErr("Squad not found — check the code");
+    }
+  };
+
+  const demo = async () => {
+    setDemoBusy(true);
+    try {
+      const { squad } = await api.demo();
+      nav(`#/s/${squad.id}/plan`);
+    } catch {
+      setJoinErr("Demo failed — try again");
+    } finally {
+      setDemoBusy(false);
     }
   };
 
@@ -36,7 +49,13 @@ export default function Landing({ nav }: { nav: (h: string) => void }) {
           <button className="btn-primary" onClick={() => nav("#/create")}>
             🎉 Create squad plan
           </button>
+          <button className="btn-ghost" onClick={demo} disabled={demoBusy}>
+            {demoBusy ? "Seeding demo…" : "✨ Try a demo squad"}
+          </button>
         </div>
+        <p className="text-white/35 text-xs mt-3">
+          Demo squad = 3 friends, instant plan. Judges, start here 👆
+        </p>
 
         {/* join with code */}
         <div className="mt-8 flex items-center justify-center gap-2 max-w-md mx-auto">

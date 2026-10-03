@@ -38,7 +38,7 @@ function PickCard({ hit, rank }: { hit: TasteHit; rank: number }) {
       )}
       {hit.matchedFavorites && hit.matchedFavorites.length > 0 && (
         <div className="mt-3">
-          <p className="text-xs text-white/40 mb-1">Why your squad will love it:</p>
+          <p className="text-xs text-white/40 mb-1">Taste signals behind this pick:</p>
           <div className="flex flex-wrap gap-1.5">
             {hit.matchedFavorites.map((f, i) => (
               <span key={i} className="chip !bg-neon/15 !text-neon">
@@ -116,8 +116,10 @@ export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => 
   const [err, setErr] = useState("");
 
   useEffect(() => {
+    // Saved plan first (shareable + consistent); generate if none yet.
     api
-      .plan(id)
+      .getPlan(id)
+      .catch(() => api.plan(id))
       .then(setResult)
       .catch((e) => setErr((e as Error).message));
   }, [id]);
