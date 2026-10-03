@@ -16,11 +16,18 @@ export interface ItineraryStop {
   detail: string;
 }
 
+export interface TasteDNA {
+  categories: Array<{ key: string; emoji: string; label: string; percent: number }>;
+  members: Array<{ name: string; topCategory: string; favorites: number }>;
+  totalFavorites: number;
+}
+
 export interface PlanResult {
   plan: Plan;
   trendingTwist: { movie: TasteHit | null; restaurant: TasteHit | null; music: TasteHit | null };
   itinerary: ItineraryStop[];
   itineraryAI: boolean;
+  tasteDNA: TasteDNA;
   qloo: string;
   members: number;
 }
@@ -81,6 +88,12 @@ export const api = {
     req<PlanResult>(`/api/squads/${encodeURIComponent(id)}/plan`),
   /** One-click demo squad for instant judge-friendly magic. */
   demo: () => req<{ squad: Squad }>("/api/demo", { method: "POST" }),
+  /** Remove a member from the squad. */
+  removeMember: (id: string, name: string) =>
+    req<{ squad: Squad }>(
+      `/api/squads/${encodeURIComponent(id)}/members/${encodeURIComponent(name)}`,
+      { method: "DELETE" }
+    ),
   /** Live squad room events (SSE). Returns a cleanup function. */
   stream: (id: string, onEvent: (ev: { type: string; member?: string; memberCount?: number }) => void) => {
     const es = new EventSource(`/api/squads/${encodeURIComponent(id)}/stream`);

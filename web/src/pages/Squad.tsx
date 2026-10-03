@@ -77,6 +77,16 @@ export default function SquadPage({ id, nav }: { id: string; nav: (h: string) =>
     }
   };
 
+  const remove = async (memberName: string) => {
+    if (!confirm(`Remove ${memberName} from the squad?`)) return;
+    try {
+      const { squad } = await api.removeMember(id, memberName);
+      setSquad(squad);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+
   if (err && !squad) return <p className="text-center pt-20 text-red-400">{err}</p>;
   if (!squad) return <p className="text-center pt-20 text-white/50">Loading squad…</p>;
 
@@ -119,7 +129,16 @@ export default function SquadPage({ id, nav }: { id: string; nav: (h: string) =>
       <div className="space-y-3 mb-8">
         {squad.members.map((m) => (
           <div key={m.name} className="card">
-            <div className="font-semibold mb-2">🧑 {m.name}</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-semibold">🧑 {m.name}</div>
+              <button
+                onClick={() => remove(m.name)}
+                className="text-white/30 hover:text-red-400 text-sm transition"
+                title={`Remove ${m.name}`}
+              >
+                ✕
+              </button>
+            </div>
             <div className="flex flex-wrap gap-2">
               {m.favorites.map((f, i) => (
                 <span key={i} className="chip">

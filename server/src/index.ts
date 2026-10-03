@@ -5,7 +5,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { broadcast, subscribe } from "./events.js";
 import { buildItinerary } from "./itinerary.js";
-import { qlooMode, qlooReady, squadPlan, trending, vibeScore } from "./qloo.js";
+import {
+  qlooMode,
+  qlooReady,
+  squadAffinity,
+  squadPlan,
+  tasteDNA,
+  trending,
+  vibeScore,
+} from "./qloo.js";
 import {
   addMember,
   createDemoSquad,
@@ -13,6 +21,7 @@ import {
   getSavedPlan,
   getSquad,
   publicSquad,
+  removeMember,
   savePlan,
 } from "./store.js";
 
@@ -97,6 +106,21 @@ app.post("/api/demo", (_req, res) => {
   res.json({ squad: publicSquad(s) });
 });
 
+// Remove a member from the squad
+app.delete("/api/squads/:id/members/:name", (req, res) => {
+  const s = removeMember(req.params.id, req.params.name);
+  if (!s) {
+    res.status(404).json({ error: "squad or member not found" });
+    return;
+  }
+  broadcast(s.id, {
+    type: "member_joined",
+    member: `${req.params.name} left`,
+    memberCount: s.members.length,
+  });
+  res.json({ squad: publicSquad(s) });
+});
+
 // Generate the squad plan — the Qloo-powered intersection
 app.post("/api/squads/:id/plan", async (req, res) => {
   const s = getSquad(req.params.id);
@@ -116,39 +140,45 @@ app.post("/api/squads/:id/plan", async (req, res) => {
     const favorites = s.members.flatMap((m) =>
       m.favorites.map((f) => ({ member: m.name, favorite: f }))
     );
-    const [plan, trends] = await Promise.all([
-      squadPlan(favorites, s.location, s.vibe),
+    const result = await squadPlan(favorites, s.location, s.vibe);
+
+    // TRUE intersection: per-member personal top picks -> affinity per candidate
+    const affinity = await squadAffinity(
+      result.resolved,
+      { movie: result.movie, restaurant: result.restaurant, music: result.music },
+      s.location
+    ).catch(() => new Map<string, number>());
+
+    const [trendLists, itinerary] = await Promise.all([
       Promise.all([
         trending("movie", "", 1).catch(() => []),
         trending("restaurant", s.location, 1).catch(() => []),
         trending("music", "", 1).catch(() => []),
       ]),
+      buildItinerary(s.name, s.vibe, s.location, result.movie, result.restaurant, result.music),
     ]);
 
-    // Vibe scores per pick
-    const scored = Object.fromEntries(
-      Object.entries(plan).map(([cat, hits]) => [
-        cat,
-        hits.map((h) => ({ ...h, vibeScore: vibeScore(h, s.members.length) })),
-      ])
-    );
+    // Vibe scores: Qloo-derived affinity (70%) + popularity (30%)
+    const withScores = <T extends { entityId: string }>(hits: T[]) =>
+      hits.map((h) => ({
+        ...h,
+        vibeScore: vibeScore(h as never, affinity.get(h.entityId), s.members.length),
+      }));
+    const scored = {
+      movie: withScores(result.movie),
+      restaurant: withScores(result.restaurant),
+      music: withScores(result.music),
+    };
 
     // Trending twist: one fresh pick per category
     const twist = {
-      movie: trends[0][0] ?? null,
-      restaurant: trends[1][0] ?? null,
-      music: trends[2][0] ?? null,
+      movie: trendLists[0][0] ?? null,
+      restaurant: trendLists[1][0] ?? null,
+      music: trendLists[2][0] ?? null,
     };
 
-    // AI evening itinerary
-    const itinerary = await buildItinerary(
-      s.name,
-      s.vibe,
-      s.location,
-      plan.movie,
-      plan.restaurant,
-      plan.music
-    );
+    // Squad Taste DNA — visual fingerprint of the combined taste
+    const dna = tasteDNA(result.resolved);
 
     broadcast(s.id, { type: "plan_ready", memberCount: s.members.length });
 
@@ -157,6 +187,7 @@ app.post("/api/squads/:id/plan", async (req, res) => {
       trendingTwist: twist,
       itinerary: itinerary.stops,
       itineraryAI: itinerary.ai,
+      tasteDNA: dna,
       qloo: qlooMode(),
       members: s.members.length,
       generatedAt: new Date().toISOString(),

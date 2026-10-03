@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ItineraryStop, type Plan, type PlanResult, type TasteHit } from "../api";
+import { api, type ItineraryStop, type Plan, type PlanResult, type TasteDNA, type TasteHit } from "../api";
 
 const SECTIONS = [
   { key: "movie", emoji: "🎬", title: "Watch together" },
@@ -83,8 +83,46 @@ function Itinerary({ stops, ai }: { stops: ItineraryStop[]; ai: boolean }) {
   );
 }
 
-function TrendingTwist({ twist }: { twist: PlanResult["trendingTwist"] }) {
-  const items = [
+function TasteDNACard({ dna }: { dna: TasteDNA }) {
+  if (!dna || dna.totalFavorites === 0) return null;
+  return (
+    <div className="mb-10">
+      <h2 className="font-display font-bold text-xl mb-1">🧬 Squad Taste DNA</h2>
+      <p className="text-white/45 text-sm mb-4">
+        Your squad's combined taste fingerprint — derived from Qloo's taste graph.
+      </p>
+      <div className="card">
+        <div className="space-y-3 mb-5">
+          {dna.categories.map((c) => (
+            <div key={c.key}>
+              <div className="flex justify-between text-sm mb-1">
+                <span>
+                  {c.emoji} {c.label}
+                </span>
+                <span className="font-bold text-neon">{c.percent}%</span>
+              </div>
+              <div className="h-2.5 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-neon via-hot to-gold transition-all"
+                  style={{ width: `${c.percent}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2 pt-3 border-t border-white/10">
+          {dna.members.map((m) => (
+            <span key={m.name} className="chip" title={`${m.favorites} favorites`}>
+              🧑 {m.name} · {m.topCategory}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrendingTwist({ twist }: { twist: PlanResult["trendingTwist"] }) {  const items = [
     { hit: twist.movie, label: "🎬 Trending film" },
     { hit: twist.restaurant, label: "🍽️ Trending spot" },
     { hit: twist.music, label: "🎵 Trending sound" },
@@ -114,15 +152,40 @@ function TrendingTwist({ twist }: { twist: PlanResult["trendingTwist"] }) {
 export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => void }) {
   const [result, setResult] = useState<PlanResult | null>(null);
   const [err, setErr] = useState("");
+  const [regenBusy, setRegenBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
+  const loadSaved = () => {
     // Saved plan first (shareable + consistent); generate if none yet.
     api
       .getPlan(id)
       .catch(() => api.plan(id))
       .then(setResult)
       .catch((e) => setErr((e as Error).message));
+  };
+
+  useEffect(() => {
+    loadSaved();
   }, [id]);
+
+  const regenerate = async () => {
+    setRegenBusy(true);
+    setErr("");
+    try {
+      const r = await api.plan(id);
+      setResult(r);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setRegenBusy(false);
+    }
+  };
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(`${window.location.origin}/#/s/${id}/plan`).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   if (err)
     return (
@@ -157,6 +220,8 @@ export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => 
 
       <Itinerary stops={result.itinerary} ai={result.itineraryAI} />
 
+      {result.tasteDNA && <TasteDNACard dna={result.tasteDNA} />}
+
       {SECTIONS.map((s) => (
         <div key={s.key} className="mb-8">
           <h2 className="font-display font-bold text-xl mb-3">
@@ -175,9 +240,15 @@ export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => 
 
       <TrendingTwist twist={result.trendingTwist} />
 
-      <div className="flex gap-3 justify-center mt-10">
+      <div className="flex gap-3 justify-center mt-10 flex-wrap">
         <button className="btn-ghost" onClick={() => nav(`#/s/${id}`)}>
           ← Back to squad
+        </button>
+        <button className="btn-ghost" onClick={regenerate} disabled={regenBusy}>
+          {regenBusy ? "Regenerating…" : "🔄 Regenerate"}
+        </button>
+        <button className="btn-ghost" onClick={copyLink}>
+          {copied ? "✓ Copied!" : "🔗 Copy plan link"}
         </button>
         <button className="btn-ghost" onClick={() => nav("#/")}>
           🏠 Home

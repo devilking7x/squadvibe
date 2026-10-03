@@ -120,6 +120,20 @@ export function publicSquad(s: Squad) {
   return { ...pub, hasPlan: !!savedPlan };
 }
 
+export function removeMember(id: string, name: string): Squad | null {
+  const s = getSquad(id);
+  if (!s) return null;
+  const idx = s.members.findIndex(
+    (m) => m.name.toLowerCase() === name.toLowerCase()
+  );
+  if (idx < 0) return null;
+  s.members.splice(idx, 1);
+  // Invalidate saved plan — squad changed
+  delete s.savedPlan;
+  persist();
+  return s;
+}
+
 export function savePlan(id: string, plan: SavedPlan): boolean {
   const s = squads.get(id);
   if (!s) return false;
