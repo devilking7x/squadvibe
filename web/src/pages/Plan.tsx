@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ItineraryStop, type Plan, type PlanResult, type TasteDNA, type TasteHit } from "../api";
+import { api, type ItineraryStop, type Plan, type PlanResult, type PlanVariant, type TasteDNA, type TasteHit } from "../api";
 
 const SECTIONS = [
   { key: "movie", emoji: "🎬", title: "Watch together" },
@@ -149,6 +149,157 @@ function TrendingTwist({ twist }: { twist: PlanResult["trendingTwist"] }) {  con
   );
 }
 
+function Narrative({ text, ai }: { text?: string; ai?: boolean }) {
+  if (!text) return null;
+  return (
+    <div className="mb-10">
+      <div className="card !border-gold/30 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-gold to-hot" />
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xl">🤖</span>
+          <p className="font-display font-bold">Why this plan slaps</p>
+          {ai && <span className="chip !bg-gold/15 !text-gold !text-xs">AI narrated</span>}
+        </div>
+        <p className="text-white/80 text-[15px] leading-relaxed italic">"{text}"</p>
+      </div>
+    </div>
+  );
+}
+
+function Voting({ squadId }: { squadId: string }) {
+  const [tally, setTally] = useState<Record<string, number>>({ love: 0, fine: 0, veto: 0 });
+  const [voter, setVoter] = useState("");
+  const [myVote, setMyVote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.getVotes(squadId).then((v) => setTally(v.tally)).catch(() => {});
+    const stop = api.stream(squadId, (ev) => {
+      if (ev.type === "vote_cast" && ev.tally) setTally(ev.tally);
+    });
+    return stop;
+  }, [squadId]);
+
+  const vote = async (choice: string) => {
+    if (!voter.trim()) return;
+    setBusy(true);
+    try {
+      const r = await api.vote(squadId, voter.trim(), choice);
+      setTally(r.tally);
+      setMyVote(choice);
+    } catch {
+      /* ignore */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const total = tally.love + tally.fine + tally.veto;
+  const lovePct = total > 0 ? Math.round((tally.love / total) * 100) : 0;
+  const consensus = tally.veto > 0 ? "⚠️ Has vetoes — discuss!" : total === 0 ? "No votes yet" : lovePct >= 60 ? "🎉 Squad approved!" : "🤔 Still deciding…";
+
+  return (
+    <div className="mb-10">
+      <h2 className="font-display font-bold text-xl mb-1">🗳️ Squad vote</h2>
+      <p className="text-white/45 text-sm mb-4">Live — everyone sees votes instantly. {consensus}</p>
+      <div className="card">
+        <div className="flex gap-2 mb-4">
+          <input
+            className="input flex-1"
+            placeholder="Your name"
+            value={voter}
+            onChange={(e) => setVoter(e.target.value)}
+            maxLength={30}
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          {[
+            { c: "love", emoji: "😍", label: "Love it" },
+            { c: "fine", emoji: "👍", label: "Fine" },
+            { c: "veto", emoji: "🚫", label: "Veto" },
+          ].map(({ c, emoji, label }) => (
+            <button
+              key={c}
+              onClick={() => vote(c)}
+              disabled={busy || !voter.trim()}
+              className={`rounded-xl border p-3 text-center transition ${
+                myVote === c
+                  ? "border-neon bg-neon/15"
+                  : "border-white/15 hover:border-neon/50"
+              } disabled:opacity-40`}
+            >
+              <div className="text-2xl">{emoji}</div>
+              <div className="text-xs mt-1">{label}</div>
+              <div className="font-bold text-neon">{tally[c] ?? 0}</div>
+            </button>
+          ))}
+        </div>
+        {total > 0 && (
+          <div>
+            <div className="flex justify-between text-xs text-white/50 mb-1">
+              <span>Approval</span>
+              <span className="font-bold text-neon">{lovePct}% love it</span>
+            </div>
+            <div className="h-2.5 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-neon to-gold transition-all"
+                style={{ width: `${lovePct}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Variants({ variants }: { variants: PlanResult["variants"] }) {
+  const [tab, setTab] = useState<"consensus" | "trending" | "wildcard">("consensus");
+  if (!variants) return null;
+  const v: PlanVariant = variants[tab];
+  const sections = [
+    { key: "movie" as const, emoji: "🎬", title: "Watch" },
+    { key: "restaurant" as const, emoji: "🍽️", title: "Eat" },
+    { key: "music" as const, emoji: "🎵", title: "Vibe" },
+  ];
+  return (
+    <div className="mb-10">
+      <h2 className="font-display font-bold text-xl mb-1">🎭 Pick your flavor</h2>
+      <p className="text-white/45 text-sm mb-4">Same taste data, three ways to play it.</p>
+      <div className="flex gap-2 mb-4">
+        {(Object.keys(variants) as Array<"consensus" | "trending" | "wildcard">).map((k) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`tab-btn ${tab === k ? "active" : ""}`}
+          >
+            {variants[k].label}
+          </button>
+        ))}
+      </div>
+      <p className="text-white/50 text-sm mb-3 italic">{v.desc}</p>
+      <div className="grid md:grid-cols-3 gap-3">
+        {sections.map((s) => (
+          <div key={s.key} className="card !p-4">
+            <p className="text-xs text-white/40 mb-2">
+              {s.emoji} {s.title}
+            </p>
+            {v[s.key].length === 0 ? (
+              <p className="text-white/40 text-sm">—</p>
+            ) : (
+              v[s.key].map((hit, i) => (
+                <p key={hit.entityId + i} className="font-bold text-sm mb-1">
+                  {i === 0 ? "🥇" : "🥈"} {cleanName(hit.name)}
+                </p>
+              ))
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => void }) {
   const [result, setResult] = useState<PlanResult | null>(null);
   const [err, setErr] = useState("");
@@ -220,6 +371,8 @@ export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => 
 
       <Itinerary stops={result.itinerary} ai={result.itineraryAI} />
 
+      <Narrative text={result.narrative} ai={result.narrativeAI} />
+
       {result.tasteDNA && <TasteDNACard dna={result.tasteDNA} />}
 
       {SECTIONS.map((s) => (
@@ -239,6 +392,10 @@ export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => 
       ))}
 
       <TrendingTwist twist={result.trendingTwist} />
+
+      <Variants variants={result.variants} />
+
+      <Voting squadId={id} />
 
       <div className="flex gap-3 justify-center mt-10 flex-wrap">
         <button className="btn-ghost" onClick={() => nav(`#/s/${id}`)}>

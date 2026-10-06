@@ -22,14 +22,30 @@ export interface TasteDNA {
   totalFavorites: number;
 }
 
+export interface PlanVariant {
+  label: string;
+  desc: string;
+  movie: TasteHit[];
+  restaurant: TasteHit[];
+  music: TasteHit[];
+}
+
 export interface PlanResult {
   plan: Plan;
   trendingTwist: { movie: TasteHit | null; restaurant: TasteHit | null; music: TasteHit | null };
+  variants?: { consensus: PlanVariant; trending: PlanVariant; wildcard: PlanVariant };
   itinerary: ItineraryStop[];
   itineraryAI: boolean;
   tasteDNA: TasteDNA;
+  narrative?: string;
+  narrativeAI?: boolean;
   qloo: string;
   members: number;
+}
+
+export interface VoteTally {
+  tally: Record<string, number>;
+  votes: Array<{ member: string; choice: string; at: string }>;
 }
 
 export interface Member {
@@ -95,7 +111,7 @@ export const api = {
       { method: "DELETE" }
     ),
   /** Live squad room events (SSE). Returns a cleanup function. */
-  stream: (id: string, onEvent: (ev: { type: string; member?: string; memberCount?: number }) => void) => {
+  stream: (id: string, onEvent: (ev: { type: string; member?: string; memberCount?: number; choice?: string; tally?: Record<string, number> }) => void) => {
     const es = new EventSource(`/api/squads/${encodeURIComponent(id)}/stream`);
     es.onmessage = (msg) => {
       try {
@@ -106,4 +122,13 @@ export const api = {
     };
     return () => es.close();
   },
+  /** Cast a vote on the current plan. */
+  vote: (id: string, member: string, choice: string) =>
+    req<VoteTally>(`/api/squads/${encodeURIComponent(id)}/votes`, {
+      method: "POST",
+      body: JSON.stringify({ member, choice }),
+    }),
+  /** Get current votes. */
+  getVotes: (id: string) =>
+    req<VoteTally>(`/api/squads/${encodeURIComponent(id)}/votes`),
 };

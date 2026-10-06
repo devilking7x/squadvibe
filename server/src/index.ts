@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { broadcast, subscribe } from "./events.js";
 import { buildItinerary } from "./itinerary.js";
+import { narratePlan } from "./narrator.js";
 import {
   qlooMode,
   qlooReady,
@@ -16,10 +17,12 @@ import {
 } from "./qloo.js";
 import {
   addMember,
+  castVote,
   createDemoSquad,
   createSquad,
   getSavedPlan,
   getSquad,
+  getVotes,
   publicSquad,
   removeMember,
   savePlan,
@@ -149,13 +152,22 @@ app.post("/api/squads/:id/plan", async (req, res) => {
       s.location
     ).catch(() => new Map<string, number>());
 
-    const [trendLists, itinerary] = await Promise.all([
+    const [trendLists, itinerary, narration] = await Promise.all([
       Promise.all([
         trending("movie", "", 1).catch(() => []),
         trending("restaurant", s.location, 1).catch(() => []),
         trending("music", "", 1).catch(() => []),
       ]),
       buildItinerary(s.name, s.vibe, s.location, result.movie, result.restaurant, result.music),
+      narratePlan(
+        s.name,
+        s.members.map((m) => m.name),
+        result.movie,
+        result.restaurant,
+        result.music,
+        tasteDNA(result.resolved),
+        s.vibe
+      ).catch(() => ({ narrative: "", ai: false })),
     ]);
 
     // Vibe scores: Qloo-derived affinity (70%) + popularity (30%)
@@ -180,14 +192,51 @@ app.post("/api/squads/:id/plan", async (req, res) => {
     // Squad Taste DNA — visual fingerprint of the combined taste
     const dna = tasteDNA(result.resolved);
 
+    // 3 Vibe Variants — same taste data, three flavors (no extra Qloo calls)
+    const pickTop = <T>(arr: T[], n: number) => arr.slice(0, n);
+    const pickRandom = <T>(arr: T[], n: number) => {
+      const copy = [...arr];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+      }
+      return copy.slice(0, n);
+    };
+    const variants = {
+      consensus: {
+        label: "🎯 Best Match",
+        desc: "Highest taste affinity — the safest crowd-pleaser",
+        movie: pickTop(scored.movie, 2),
+        restaurant: pickTop(scored.restaurant, 2),
+        music: pickTop(scored.music, 2),
+      },
+      trending: {
+        label: "🔥 Trending Now",
+        desc: "What's hot right now, filtered by your squad's taste",
+        movie: twist.movie ? [twist.movie] : [],
+        restaurant: twist.restaurant ? [twist.restaurant] : [],
+        music: twist.music ? [twist.music] : [],
+      },
+      wildcard: {
+        label: "🎲 Wild Card",
+        desc: "Unexpected picks from your taste pool — embrace chaos",
+        movie: pickRandom(scored.movie, 2),
+        restaurant: pickRandom(scored.restaurant, 2),
+        music: pickRandom(scored.music, 2),
+      },
+    };
+
     broadcast(s.id, { type: "plan_ready", memberCount: s.members.length });
 
     const saved = {
       plan: scored,
       trendingTwist: twist,
+      variants,
       itinerary: itinerary.stops,
       itineraryAI: itinerary.ai,
       tasteDNA: dna,
+      narrative: narration.narrative,
+      narrativeAI: narration.ai,
       qloo: qlooMode(),
       members: s.members.length,
       generatedAt: new Date().toISOString(),
@@ -212,6 +261,46 @@ app.get("/api/squads/:id/plan", (req, res) => {
     return;
   }
   res.json(saved);
+});
+
+// ---------- Live voting ----------
+// POST /api/squads/:id/votes { member, choice: "love"|"fine"|"veto" }
+app.post("/api/squads/:id/votes", (req, res) => {
+  const { member, choice } = req.body ?? {};
+  if (typeof member !== "string" || typeof choice !== "string") {
+    res.status(400).json({ error: "member and choice are required" });
+    return;
+  }
+  const s = getSquad(req.params.id);
+  if (!s) {
+    res.status(404).json({ error: "squad not found" });
+    return;
+  }
+  if (!s.savedPlan) {
+    res.status(400).json({ error: "no plan to vote on yet" });
+    return;
+  }
+  const result = castVote(s.id, member, choice);
+  if (!result) {
+    res.status(500).json({ error: "vote failed" });
+    return;
+  }
+  broadcast(s.id, {
+    type: "vote_cast",
+    member: member.trim().slice(0, 30),
+    choice,
+    tally: result.tally,
+  });
+  res.json(result);
+});
+
+app.get("/api/squads/:id/votes", (req, res) => {
+  const v = getVotes(req.params.id);
+  if (!v) {
+    res.status(404).json({ error: "squad not found" });
+    return;
+  }
+  res.json(v);
 });
 
 // Serve the built web app (production)

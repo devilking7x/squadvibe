@@ -5,6 +5,7 @@
 export type SquadEvent =
   | { type: "member_joined"; member: string; memberCount: number }
   | { type: "plan_ready"; memberCount: number }
+  | { type: "vote_cast"; member: string; choice: string; tally: Record<string, number> }
   | { type: "ping" };
 
 type Listener = (ev: SquadEvent) => void;

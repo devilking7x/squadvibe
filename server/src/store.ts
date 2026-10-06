@@ -22,6 +22,14 @@ export interface SavedPlan {
   generatedAt: string;
 }
 
+export type VoteChoice = "love" | "fine" | "veto";
+
+export interface Vote {
+  member: string;
+  choice: VoteChoice;
+  at: string;
+}
+
 export interface Squad {
   id: string;
   code: string; // short share code, e.g. "KX7Q2M"
@@ -31,6 +39,7 @@ export interface Squad {
   createdAt: string;
   members: Member[];
   savedPlan?: SavedPlan;
+  votes: Vote[];
 }
 
 const DATA_FILE =
@@ -80,6 +89,7 @@ export function createSquad(name: string, vibe: string, location: string): Squad
     location: location.trim().slice(0, 60),
     createdAt: new Date().toISOString(),
     members: [],
+    votes: [],
   };
   squads.set(s.id, s);
   byCode.set(s.code, s.id);
@@ -115,6 +125,35 @@ export function addMember(id: string, name: string, favorites: string[]): Squad 
   return s;
 }
 
+export function castVote(id: string, member: string, choice: string): { tally: Record<string, number>; votes: Vote[] } | null {
+  const s = getSquad(id);
+  if (!s) return null;
+  const c = (choice === "love" || choice === "veto" ? choice : "fine") as VoteChoice;
+  const cleanMember = member.trim().slice(0, 30) || "Anonymous";
+  if (!s.votes) s.votes = [];
+  // One vote per member — update if they change their mind
+  const idx = s.votes.findIndex((v) => v.member.toLowerCase() === cleanMember.toLowerCase());
+  const vote: Vote = { member: cleanMember, choice: c, at: new Date().toISOString() };
+  if (idx >= 0) s.votes[idx] = vote;
+  else s.votes.push(vote);
+  persist();
+  return { tally: voteTally(s), votes: s.votes };
+}
+
+export function voteTally(s: Squad): Record<string, number> {
+  const t: Record<string, number> = { love: 0, fine: 0, veto: 0 };
+  for (const v of s.votes ?? []) {
+    if (v.choice in t) t[v.choice] += 1;
+  }
+  return t;
+}
+
+export function getVotes(id: string): { tally: Record<string, number>; votes: Vote[] } | null {
+  const s = getSquad(id);
+  if (!s) return null;
+  return { tally: voteTally(s), votes: s.votes ?? [] };
+}
+
 export function publicSquad(s: Squad) {
   const { savedPlan, ...pub } = s;
   return { ...pub, hasPlan: !!savedPlan };
@@ -138,6 +177,7 @@ export function savePlan(id: string, plan: SavedPlan): boolean {
   const s = squads.get(id);
   if (!s) return false;
   s.savedPlan = plan;
+  s.votes = []; // new plan = fresh vote
   persist();
   return true;
 }
