@@ -121,7 +121,7 @@ async function insights(
     .map((e) => mapEntity(e, category));
   // For restaurants, filter out non-dining places (malls, zoos, hotels, etc.)
   if (category === "restaurant") {
-    const NON_DINING = /mall|zoo|hotel|park|museum|theater|theatre|campus|hospital|airport|station/i;
+    const NON_DINING = /mall|zoo|hotel|park|museum|theater|theatre|campus|hospital|airport|station|fort|ghat|mountain|temple|beach|waterfall|garden|lake|dam|bridge/i;
     const filtered = hits.filter((h) => !NON_DINING.test(h.name + " " + h.description));
     return filtered.slice(0, limit);
   }
