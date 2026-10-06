@@ -335,9 +335,15 @@ export function vibeScore(
     return Math.min(99, Math.round(affinity * 0.7 + hit.popularity * 100 * 0.3));
   }
   // Fallback when affinity unavailable (mock / errors)
+  // Add deterministic variation based on entityId to avoid identical canned scores
   const pop = Math.round(hit.popularity * 70);
   const coverage = Math.min(30, memberCount * 10);
-  return Math.min(99, pop + coverage);
+  let hash = 0;
+  for (let i = 0; i < hit.entityId.length; i++) {
+    hash = (hash * 31 + hit.entityId.charCodeAt(i)) % 100;
+  }
+  const variation = (hash % 11) - 5; // -5 to +5
+  return Math.min(99, Math.max(1, pop + coverage + variation));
 }
 
 export interface TasteDNA {
