@@ -219,7 +219,7 @@ function Voting({ squadId }: { squadId: string }) {
 
   const total = tally.love + tally.fine + tally.veto;
   const lovePct = total > 0 ? Math.round((tally.love / total) * 100) : 0;
-  const consensusLabel = tally.veto > 0 ? "⚠️ Has vetoes — discuss!" : total === 0 ? "No votes yet" : lovePct >= 60 ? "🎉 Squad approved!" : "🤔 Still deciding…";
+  const consensusLabel = tally.veto > 0 ? "⚠️ Has vetoes — discuss!" : total === 0 ? "No votes yet" : total >= 2 && lovePct >= 60 ? "🎉 Squad approved!" : "🤔 Still deciding…";
 
   return (
     <div className="mb-10">
@@ -291,7 +291,8 @@ function Voting({ squadId }: { squadId: string }) {
 function Variants({ variants }: { variants: PlanResult["variants"] }) {
   const [tab, setTab] = useState<"consensus" | "trending" | "wildcard">("consensus");
   if (!variants) return null;
-  const v: PlanVariant = variants[tab];
+  const v: PlanVariant | undefined = variants[tab];
+  if (!v) return null;
   const sections = [
     { key: "movie" as const, emoji: "🎬", title: "Watch" },
     { key: "restaurant" as const, emoji: "🍽️", title: "Eat" },
@@ -319,10 +320,10 @@ function Variants({ variants }: { variants: PlanResult["variants"] }) {
             <p className="text-xs text-white/40 mb-2">
               {s.emoji} {s.title}
             </p>
-            {v[s.key].length === 0 ? (
+            {(v[s.key] ?? []).length === 0 ? (
               <p className="text-white/40 text-sm">—</p>
             ) : (
-              v[s.key].map((hit, i) => (
+              (v[s.key] ?? []).map((hit, i) => (
                 <p key={hit.entityId + i} className="font-bold text-sm mb-1">
                   {i === 0 ? "🥇" : "🥈"} {cleanName(hit.name)}
                 </p>

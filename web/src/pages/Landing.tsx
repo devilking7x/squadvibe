@@ -41,7 +41,7 @@ export default function Landing({ nav }: { nav: (h: string) => void }) {
           fight forever.
         </h1>
         <p className="text-white/60 text-lg mt-6 max-w-xl mx-auto">
-          SquadVibe finds the <b className="text-white">movie, dinner & music</b> your
+          SquadVibe finds the{" "}<b className="text-white">movie, dinner & music</b>{" "}your
           whole squad will love — grounded in Qloo's 250M+ entity taste graph,
           matched across everyone's taste.
         </p>
