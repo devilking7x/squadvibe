@@ -116,9 +116,16 @@ async function insights(
   const data = (await res.json()) as {
     results?: { entities?: Array<Record<string, unknown>> };
   };
-  return (data.results?.entities ?? [])
-    .slice(0, limit)
+  const hits = (data.results?.entities ?? [])
+    .slice(0, limit * 2) // fetch extra to allow filtering
     .map((e) => mapEntity(e, category));
+  // For restaurants, filter out non-dining places (malls, zoos, hotels, etc.)
+  if (category === "restaurant") {
+    const NON_DINING = /mall|zoo|hotel|park|museum|theater|theatre|campus|hospital|airport|station/i;
+    const filtered = hits.filter((h) => !NON_DINING.test(h.name + " " + h.description));
+    return filtered.slice(0, limit);
+  }
+  return hits.slice(0, limit);
 }
 
 // --- Mock data (clearly labeled, never real) ---

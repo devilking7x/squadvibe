@@ -51,13 +51,17 @@ function templateItinerary(
       time: "9:15 PM",
       emoji: "🎬",
       title: `Watch: ${m}`,
-      detail: `Qloo matched this to everyone's favorites — zero "boring yaar" complaints expected.`,
+      detail: movie[0]
+        ? `Qloo matched this to everyone's favorites — zero "boring yaar" complaints expected.`
+        : `Add movie favorites to get a personalized pick from Qloo's taste graph.`,
     },
     {
       time: "11:30 PM",
       emoji: "🎵",
       title: `After-party: ${mu}`,
-      detail: `Ride-home / late-night playlist energy, tuned to the squad's combined music DNA.`,
+      detail: music[0]
+        ? `Ride-home / late-night playlist energy, tuned to the squad's combined music DNA.`
+        : `Add music favorites to get a personalized playlist from Qloo's taste graph.`,
     },
   ];
 }
