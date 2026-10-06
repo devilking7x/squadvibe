@@ -57,6 +57,28 @@ QLOO_MOCK=1  # canned [MOCK] results, clearly labeled — never real data
 - `POST /api/squads/:id/members` — `{name, favorites[]}` join/update
 - `POST /api/squads/:id/plan` — the Qloo-powered squad plan
 
+## Features (17)
+
+1. **Create/Join Squad** — share code, no signup required
+2. **Real Qloo Taste AI** — live integration with Qloo's 250M+ entity taste graph
+3. **Per-Member Taste DNA** — individual taste profiles from Qloo Insights
+4. **True Affinity Intersection** — finds what the squad genuinely overlaps on
+5. **Vibe Score** — 70% affinity + 30% popularity
+6. **3 Plan Variants** — Best Match / Trending Now / Wild Card
+7. **Personalized Plan Narrative** — AI-written story for your squad's night
+8. **Live Voting** — Love / Fine / Veto with real-time SSE updates
+9. **Honest Consensus Narrator** — calls out ties, vetoes and split votes (no fake agreement)
+10. **Copy Plan Link** — share the plan instantly
+11. **Regenerate Plan** — fresh picks on demand
+12. **Remove Member** — invalidates saved plan automatically
+13. **Tavily Venue Enrichment** — real venue details when available (honest fallback)
+14. **Live Intel UI** — shows genuine enrichment, never fabricated
+15. **Squad Taste DNA Card** — visual taste profile
+16. **Smart Budget Split** — fair cost sharing
+17. **Live Polls** — real-time group decisions
+
+**Tests:** 23/23 passing (11 upgrade + 12 winning-feature checks)
+
 ## License
 
 MIT
