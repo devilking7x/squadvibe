@@ -77,7 +77,7 @@ QLOO_MOCK=1  # canned [MOCK] results, clearly labeled — never real data
 16. **Smart Budget Split** — fair cost sharing
 17. **Live Polls** — real-time group decisions
 
-**Tests:** 23/23 passing (11 upgrade + 12 winning-feature checks)
+**Tests:** 11/11 passing (upgrade suite)
 
 ## License
 
