@@ -4,6 +4,7 @@
 
 import type { TasteHit } from "./qloo.js";
 import type { TasteDNA } from "./qloo.js";
+import type { Vote } from "./store.js";
 
 const NEBIUS_KEY = process.env.NEBIUS_API_KEY ?? "";
 const NEBIUS_URL =
@@ -88,4 +89,149 @@ export async function narratePlan(
   } catch {
     return fallback();
   }
+}
+
+// ---------- Consensus narrator ----------
+// Explains what the squad's votes ACTUALLY say — including honest trade-offs
+// when votes are split. Rule-based over real vote data; Nebius (when
+// configured) only rewords, never invents. No fake consensus, ever.
+
+export interface ConsensusNarrative {
+  text: string;
+  /** true only if Nebius successfully reworded the rule-based draft */
+  ai: boolean;
+}
+
+export interface ConsensusPicks {
+  movie?: string;
+  restaurant?: string;
+  music?: string;
+}
+
+function pickName(n?: string): string {
+  return (n ?? "").replace(/^\[MOCK\]\s*/, "").trim();
+}
+
+function names(list: string[]): string {
+  if (list.length === 0) return "";
+  if (list.length === 1) return list[0];
+  if (list.length === 2) return `${list[0]} and ${list[1]}`;
+  return `${list.slice(0, -1).join(", ")}, and ${list[list.length - 1]}`;
+}
+
+function ruleBasedConsensus(votes: Vote[], picks: ConsensusPicks): string {
+  const lovers = votes.filter((v) => v.choice === "love").map((v) => v.member);
+  const finers = votes.filter((v) => v.choice === "fine").map((v) => v.member);
+  const vetoers = votes.filter((v) => v.choice === "veto").map((v) => v.member);
+  const total = votes.length;
+  const r = pickName(picks.restaurant) || "dinner";
+  const m = pickName(picks.movie) || "a movie";
+  const mu = pickName(picks.music) || "music";
+
+  // Single vote — just report, don't declare anything.
+  if (total === 1) {
+    const v = votes[0];
+    const word = v.choice === "love" ? "loves it 😍" : v.choice === "veto" ? "vetoed it 🚫" : "says it's fine 👍";
+    return `🗳️ Only ${v.member} has voted so far — ${word}. Waiting on the rest of the squad before calling it.`;
+  }
+
+  // Veto on the table — the honest headline.
+  if (vetoers.length > 0) {
+    const lovePart =
+      lovers.length > 0
+        ? `${names(lovers)} ${lovers.length === 1 ? "is" : "are"} all in 😍`
+        : "nobody's in love with it yet";
+    return (
+      `⚖️ Split squad: ${lovePart}, but ${names(vetoers)} hit veto 🚫. ` +
+      `The plan leans ${r} + ${m} — worth a 2-minute huddle before anyone commits. ` +
+      `No fake consensus here: the veto stands until ${vetoers[0]} is convinced.`
+    );
+  }
+
+  const lovePct = Math.round((lovers.length / total) * 100);
+
+  // Clear majority love — genuine consensus.
+  if (lovePct >= 60) {
+    const finePart =
+      finers.length > 0
+        ? ` ${names(finers)} ${finers.length === 1 ? "says" : "say"} it's fine — no objections.`
+        : "";
+    return (
+      `🎉 Full send — ${lovers.length}/${total} of the squad love this plan.${finePart} ` +
+      `${r} → ${m} → ${mu}. No debates needed, just go.`
+    );
+  }
+
+  // Dead tie between love and fine — name both sides.
+  if (lovers.length > 0 && lovers.length === finers.length) {
+    return (
+      `⚖️ Dead tie — ${names(lovers)} love${lovers.length === 1 ? "s" : ""} it, ${names(finers)} say${finers.length === 1 ? "s" : ""} fine. ` +
+      `Nobody's vetoing, so it's genuinely 50/50: let ${lovers[0]} make the final call on ${r} and call it a night.`
+    );
+  }
+
+  // Split: some love, some merely fine — name the trade-off.
+  if (lovers.length > 0 && finers.length > 0) {
+    return (
+      `🤔 ${names(lovers)} love${lovers.length === 1 ? "s" : ""} this plan, ${names(finers)} think${finers.length === 1 ? "s" : ""} it's fine — ` +
+      `nobody hates it, nobody's obsessed. Compromise: lead with ${r} (the crowd-pleaser) and keep ${m} as the flexible slot.`
+    );
+  }
+
+  // All fine, no love, no veto.
+  return (
+    `👍 Nobody's in love, nobody's vetoing — ${total} × "fine". ` +
+    `It's a safe plan: ${r} + ${m}. Good enough is good.`
+  );
+}
+
+async function polishWithNebius(draft: string): Promise<string | null> {
+  if (!NEBIUS_KEY) return null;
+  try {
+    const res = await fetch(`${NEBIUS_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${NEBIUS_KEY}`,
+      },
+      body: JSON.stringify({
+        model: NEBIUS_MODEL,
+        messages: [
+          {
+            role: "user",
+            content:
+              `Reword this squad vote summary into 1-2 punchy sentences. ` +
+              `Keep ALL facts (names, vote counts, picks) EXACTLY the same — do not invent, drop, or soften any of them. ` +
+              `Max 60 words. ONLY the reworded text, no preamble.\n\n${draft}`,
+          },
+        ],
+        max_tokens: 150,
+        temperature: 0.7,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const text = (data.choices?.[0]?.message?.content ?? "").trim();
+    return text.length >= 20 ? text.slice(0, 400) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Narrate what the votes say. Returns null when nobody has voted yet.
+ * Rule-based draft is always the source of truth; Nebius only rewords.
+ */
+export async function narrateConsensus(
+  votes: Vote[],
+  picks: ConsensusPicks
+): Promise<ConsensusNarrative | null> {
+  if (!votes || votes.length === 0) return null;
+  const draft = ruleBasedConsensus(votes, picks);
+  const polished = await polishWithNebius(draft);
+  if (polished) return { text: polished, ai: true };
+  return { text: draft, ai: false };
 }

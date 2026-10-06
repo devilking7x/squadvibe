@@ -36,6 +36,20 @@ function PickCard({ hit, rank }: { hit: TasteHit; rank: number }) {
       {hit.description && (
         <p className="text-white/55 text-sm mt-2">{cleanName(hit.description)}</p>
       )}
+      {hit.enrichment && hit.enrichment.snippets.length > 0 && (
+        <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.04] p-2.5">
+          <p className="text-[11px] font-bold text-white/50 mb-1.5">
+            ⚡ LIVE INTEL <span className="font-normal text-white/30">· fresh from the web</span>
+          </p>
+          <ul className="space-y-1.5">
+            {hit.enrichment.snippets.map((sn, i) => (
+              <li key={i} className="text-xs text-white/60 leading-relaxed">
+                &ldquo;{sn}&rdquo;
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {hit.matchedFavorites && hit.matchedFavorites.length > 0 && (
         <div className="mt-3">
           <p className="text-xs text-white/40 mb-1">Taste signals behind this pick:</p>
@@ -171,11 +185,18 @@ function Voting({ squadId }: { squadId: string }) {
   const [voter, setVoter] = useState("");
   const [myVote, setMyVote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [consensus, setConsensus] = useState<{ text: string; ai: boolean } | null>(null);
 
   useEffect(() => {
-    api.getVotes(squadId).then((v) => setTally(v.tally)).catch(() => {});
+    api.getVotes(squadId).then((v) => {
+      setTally(v.tally);
+      setConsensus(v.consensus ?? null);
+    }).catch(() => {});
     const stop = api.stream(squadId, (ev) => {
-      if (ev.type === "vote_cast" && ev.tally) setTally(ev.tally);
+      if (ev.type === "vote_cast" && ev.tally) {
+        setTally(ev.tally);
+        api.getVotes(squadId).then((v) => setConsensus(v.consensus ?? null)).catch(() => {});
+      }
     });
     return stop;
   }, [squadId]);
@@ -184,8 +205,10 @@ function Voting({ squadId }: { squadId: string }) {
     if (!voter.trim()) return;
     setBusy(true);
     try {
-      const r = await api.vote(squadId, voter.trim(), choice);
-      setTally(r.tally);
+      await api.vote(squadId, voter.trim(), choice);
+      const v = await api.getVotes(squadId);
+      setTally(v.tally);
+      setConsensus(v.consensus ?? null);
       setMyVote(choice);
     } catch {
       /* ignore */
@@ -196,12 +219,12 @@ function Voting({ squadId }: { squadId: string }) {
 
   const total = tally.love + tally.fine + tally.veto;
   const lovePct = total > 0 ? Math.round((tally.love / total) * 100) : 0;
-  const consensus = tally.veto > 0 ? "⚠️ Has vetoes — discuss!" : total === 0 ? "No votes yet" : lovePct >= 60 ? "🎉 Squad approved!" : "🤔 Still deciding…";
+  const consensusLabel = tally.veto > 0 ? "⚠️ Has vetoes — discuss!" : total === 0 ? "No votes yet" : lovePct >= 60 ? "🎉 Squad approved!" : "🤔 Still deciding…";
 
   return (
     <div className="mb-10">
       <h2 className="font-display font-bold text-xl mb-1">🗳️ Squad vote</h2>
-      <p className="text-white/45 text-sm mb-4">Live — everyone sees votes instantly. {consensus}</p>
+      <p className="text-white/45 text-sm mb-4">Live — everyone sees votes instantly. {consensusLabel}</p>
       <div className="card">
         <div className="flex gap-2 mb-4">
           <input
@@ -246,6 +269,18 @@ function Voting({ squadId }: { squadId: string }) {
                 style={{ width: `${lovePct}%` }}
               />
             </div>
+          </div>
+        )}
+        {consensus && (
+          <div className="mt-4 rounded-xl border border-gold/25 bg-gold/5 p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-sm">🗣️</span>
+              <p className="text-xs font-bold text-gold">Squad reading</p>
+              {consensus.ai && (
+                <span className="chip !bg-gold/15 !text-gold !text-[10px]">AI</span>
+              )}
+            </div>
+            <p className="text-sm text-white/75 leading-relaxed">{consensus.text}</p>
           </div>
         )}
       </div>

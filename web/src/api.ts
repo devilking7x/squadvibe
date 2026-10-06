@@ -1,4 +1,11 @@
 // SquadVibe API client
+// Real web intel for a venue pick — present ONLY when Tavily enrichment
+// ran (TAVILY_API_KEY set). Absent otherwise; never fabricated.
+export interface VenueEnrichment {
+  snippets: string[];
+  source: string;
+}
+
 export interface TasteHit {
   name: string;
   entityId: string;
@@ -7,6 +14,7 @@ export interface TasteHit {
   popularity: number;
   matchedFavorites?: string[];
   vibeScore?: number;
+  enrichment?: VenueEnrichment;
 }
 
 export interface ItineraryStop {
@@ -43,9 +51,16 @@ export interface PlanResult {
   members: number;
 }
 
+export interface ConsensusNarrative {
+  text: string;
+  ai: boolean;
+}
+
 export interface VoteTally {
   tally: Record<string, number>;
   votes: Array<{ member: string; choice: string; at: string }>;
+  /** What the votes honestly say — null until the first vote. */
+  consensus?: ConsensusNarrative | null;
 }
 
 export interface Member {

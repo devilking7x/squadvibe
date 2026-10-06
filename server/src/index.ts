@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { broadcast, subscribe } from "./events.js";
 import { buildItinerary } from "./itinerary.js";
-import { narratePlan } from "./narrator.js";
+import { enrichVenues } from "./enrich.js";
+import { narrateConsensus, narratePlan } from "./narrator.js";
 import {
   qlooMode,
   qlooReady,
@@ -152,7 +153,7 @@ app.post("/api/squads/:id/plan", async (req, res) => {
       s.location
     ).catch(() => new Map<string, number>());
 
-    const [trendLists, itinerary, narration] = await Promise.all([
+    const [trendLists, itinerary, narration, enrichment] = await Promise.all([
       Promise.all([
         trending("movie", "", 1).catch(() => []),
         trending("restaurant", s.location, 1).catch(() => []),
@@ -168,6 +169,12 @@ app.post("/api/squads/:id/plan", async (req, res) => {
         tasteDNA(result.resolved),
         s.vibe
       ).catch(() => ({ narrative: "", ai: false })),
+      // Web-enriched venue cards — real Tavily snippets when TAVILY_API_KEY
+      // is set; empty map otherwise (plan passes through untouched).
+      enrichVenues(
+        result.restaurant.slice(0, 3).map((h) => ({ entityId: h.entityId, name: h.name })),
+        s.location
+      ).catch(() => new Map()),
     ]);
 
     // Vibe scores: Qloo-derived affinity (70%) + popularity (30%)
@@ -180,6 +187,16 @@ app.post("/api/squads/:id/plan", async (req, res) => {
       movie: withScores(result.movie),
       restaurant: withScores(result.restaurant),
       music: withScores(result.music),
+    };
+
+    // Attach real web intel to restaurant picks (field absent when no key —
+    // never faked). Variants built below inherit it for overlapping picks.
+    const planOut = {
+      ...scored,
+      restaurant: scored.restaurant.map((h) => {
+        const e = enrichment.get(h.entityId);
+        return e ? { ...h, enrichment: e } : h;
+      }),
     };
 
     // Trending twist: one fresh pick per category
@@ -206,9 +223,9 @@ app.post("/api/squads/:id/plan", async (req, res) => {
       consensus: {
         label: "🎯 Best Match",
         desc: "Highest taste affinity — the safest crowd-pleaser",
-        movie: pickTop(scored.movie, 2),
-        restaurant: pickTop(scored.restaurant, 2),
-        music: pickTop(scored.music, 2),
+        movie: pickTop(planOut.movie, 2),
+        restaurant: pickTop(planOut.restaurant, 2),
+        music: pickTop(planOut.music, 2),
       },
       trending: {
         label: "🔥 Trending Now",
@@ -220,16 +237,16 @@ app.post("/api/squads/:id/plan", async (req, res) => {
       wildcard: {
         label: "🎲 Wild Card",
         desc: "Unexpected picks from your taste pool — embrace chaos",
-        movie: pickRandom(scored.movie, 2),
-        restaurant: pickRandom(scored.restaurant, 2),
-        music: pickRandom(scored.music, 2),
+        movie: pickRandom(planOut.movie, 2),
+        restaurant: pickRandom(planOut.restaurant, 2),
+        music: pickRandom(planOut.music, 2),
       },
     };
 
     broadcast(s.id, { type: "plan_ready", memberCount: s.members.length });
 
     const saved = {
-      plan: scored,
+      plan: planOut,
       trendingTwist: twist,
       variants,
       itinerary: itinerary.stops,
@@ -294,13 +311,32 @@ app.post("/api/squads/:id/votes", (req, res) => {
   res.json(result);
 });
 
-app.get("/api/squads/:id/votes", (req, res) => {
+app.get("/api/squads/:id/votes", async (req, res) => {
+  const s = getSquad(req.params.id);
+  if (!s) {
+    res.status(404).json({ error: "squad not found" });
+    return;
+  }
   const v = getVotes(req.params.id);
   if (!v) {
     res.status(404).json({ error: "squad not found" });
     return;
   }
-  res.json(v);
+  // Consensus narrative — what the votes honestly say (null until first vote).
+  // Rule-based over real vote data; Nebius only rewords when configured.
+  const planAny = s.savedPlan?.plan as
+    | {
+        movie?: Array<{ name?: string }>;
+        restaurant?: Array<{ name?: string }>;
+        music?: Array<{ name?: string }>;
+      }
+    | undefined;
+  const consensus = await narrateConsensus(v.votes, {
+    movie: planAny?.movie?.[0]?.name,
+    restaurant: planAny?.restaurant?.[0]?.name,
+    music: planAny?.music?.[0]?.name,
+  }).catch(() => null);
+  res.json({ ...v, consensus });
 });
 
 // Serve the built web app (production)
