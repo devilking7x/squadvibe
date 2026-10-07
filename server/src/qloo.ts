@@ -104,16 +104,17 @@ async function insights(
   location: string,
   limit: number
 ): Promise<TasteHit[]> {
-  const body: Record<string, unknown> = {
+  // Qloo hackathon API: GET with query-string params (not POST + JSON body),
+  // and `take` (not `limit`) controls result count. Confirmed by Qloo Support.
+  const params = new URLSearchParams({
     "filter.type": URNS[category],
-    limit,
-  };
-  if (signalIds.length) body["signal.interests.entities"] = signalIds.join(",");
-  if (location.trim()) body["filter.location.query"] = location.trim();
-  const res = await fetch(`${BASE}/insights`, {
-    method: "POST",
-    headers: { ...headers(), "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    take: String(limit * 2), // fetch extra to allow filtering
+  });
+  if (signalIds.length) params.set("signal.interests.entities", signalIds.join(","));
+  if (location.trim()) params.set("filter.location.query", location.trim());
+  const res = await fetch(`${BASE}/insights?${params.toString()}`, {
+    method: "GET",
+    headers: headers(),
     signal: AbortSignal.timeout(30000),
   });
   if (!res.ok) {
