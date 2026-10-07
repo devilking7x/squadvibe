@@ -432,3 +432,47 @@ export function tasteDNA(resolved: ResolvedFavorite[]): TasteDNA {
 
   return { categories, members, totalFavorites: total };
 }
+
+/**
+ * Debug helper: tests each Qloo API stage and reports what works/fails.
+ * Never exposes the API key — only status codes and result counts.
+ */
+export async function debugQloo(): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {
+    mode: qlooMode(),
+    keySet: !!API_KEY,
+    base: BASE,
+  };
+  if (MOCK) {
+    out.note = "MOCK mode — no live API calls";
+    return out;
+  }
+  if (!API_KEY) {
+    out.error = "no API key";
+    return out;
+  }
+  // 1. Search test
+  try {
+    const found = await searchEntitiesWithTypes("Interstellar", 3);
+    out.search = { ok: true, count: found.length, sample: found[0]?.id?.slice(0, 8) ?? null };
+  } catch (e) {
+    out.search = { ok: false, error: (e as Error).message.slice(0, 120) };
+  }
+  // 2. Insights tests (with and without signals)
+  for (const cat of ["movie", "restaurant", "music"] as const) {
+    try {
+      const hits = await insights(cat, [], cat === "restaurant" ? "Pune" : "", 3);
+      (out as Record<string, unknown>)[`insights_${cat}`] = {
+        ok: true,
+        count: hits.length,
+        first: hits[0]?.name?.slice(0, 40) ?? null,
+      };
+    } catch (e) {
+      (out as Record<string, unknown>)[`insights_${cat}`] = {
+        ok: false,
+        error: (e as Error).message.slice(0, 120),
+      };
+    }
+  }
+  return out;
+}

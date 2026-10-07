@@ -37,6 +37,18 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, qloo: qlooMode(), time: new Date().toISOString() });
 });
 
+// Debug: test Qloo API step-by-step WITHOUT exposing the key.
+// Returns which stage fails: search, insights-movie, insights-restaurant, insights-music.
+app.get("/api/debug/qloo", async (_req, res) => {
+  const { debugQloo } = await import("./qloo.js");
+  try {
+    const result = await debugQloo();
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.json({ ok: false, error: (e as Error).message });
+  }
+});
+
 // Create a squad plan session
 app.post("/api/squads", (req, res) => {
   const { name, vibe, location } = req.body ?? {};
