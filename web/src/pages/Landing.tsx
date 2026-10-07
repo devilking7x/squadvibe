@@ -81,29 +81,29 @@ export default function Landing({ nav }: { nav: (h: string) => void }) {
           <div className="card card-premium text-left relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-neon via-hot to-gold"></div>
             <div className="flex items-center justify-between mb-4">
-              <p className="chip-gold">✨ Sample squad plan</p>
-              <p className="text-white/40 text-xs">3 friends · Pune</p>
+              <p className="chip-gold">✨ How a plan looks</p>
+              <p className="text-white/40 text-xs">illustration</p>
             </div>
             <div className="space-y-3">
               <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
                 <span className="text-2xl">🎬</span>
                 <div className="flex-1">
-                  <p className="font-semibold text-sm">Dune: Part Two</p>
-                  <p className="text-white/40 text-xs">Sci-fi epic · 96% squad match</p>
+                  <p className="font-semibold text-sm">Movie your squad agrees on</p>
+                  <p className="text-white/40 text-xs">matched across everyone's taste</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
                 <span className="text-2xl">🍜</span>
                 <div className="flex-1">
-                  <p className="font-semibold text-sm">Midnight Ramen Bar</p>
-                  <p className="text-white/40 text-xs">Japanese · 92% squad match</p>
+                  <p className="font-semibold text-sm">Dinner spot everyone loves</p>
+                  <p className="text-white/40 text-xs">cuisine overlap, location-aware</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
                 <span className="text-2xl">🎵</span>
                 <div className="flex-1">
-                  <p className="font-semibold text-sm">A.R. Rahman Essentials</p>
-                  <p className="text-white/40 text-xs">Playlist · 89% squad match</p>
+                  <p className="font-semibold text-sm">Playlist for the night</p>
+                  <p className="text-white/40 text-xs">artists the whole crew vibes with</p>
                 </div>
               </div>
             </div>
