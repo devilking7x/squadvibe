@@ -6,34 +6,123 @@
 
 body {
   @apply bg-ink text-white font-body antialiased;
+  background-image: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(251, 191, 36, 0.05), transparent),
+    radial-gradient(ellipse 60% 40% at 90% 110%, rgba(192, 132, 252, 0.06), transparent);
+  background-attachment: fixed;
+}
+
+/* ---------- Premium gold utilities ---------- */
+.text-gold-gradient {
+  @apply font-display font-extrabold;
+  background: linear-gradient(135deg, #fde68a 0%, #fbbf24 45%, #b45309 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .card {
   @apply bg-grape/80 border border-white/10 rounded-2xl p-5 backdrop-blur;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: all 0.25s ease;
+}
+.card-premium:hover {
+  @apply border-gold/30;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 24px rgba(251, 191, 36, 0.1);
+  transform: translateY(-2px);
 }
 
 .btn-primary {
   @apply bg-gradient-to-r from-neon to-hot text-ink font-bold px-6 py-3 rounded-xl
     hover:opacity-90 active:scale-[0.98] transition disabled:opacity-40 disabled:pointer-events-none;
+  box-shadow: 0 4px 20px rgba(192, 132, 252, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.btn-primary:hover {
+  box-shadow: 0 6px 28px rgba(192, 132, 252, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.btn-gold {
+  @apply font-display font-bold px-6 py-3 rounded-xl text-ink
+    active:scale-[0.98] transition disabled:opacity-40 disabled:pointer-events-none;
+  background: linear-gradient(135deg, #fde68a 0%, #fbbf24 50%, #d97706 100%);
+  box-shadow: 0 4px 20px rgba(251, 191, 36, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.btn-gold:hover {
+  box-shadow: 0 6px 32px rgba(251, 191, 36, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  filter: brightness(1.05);
 }
 
 .btn-ghost {
   @apply border border-white/20 px-6 py-3 rounded-xl hover:bg-white/5 transition font-medium;
 }
+.btn-ghost:hover {
+  @apply border-gold/40;
+}
 
 .input {
   @apply w-full bg-ink/60 border border-white/15 rounded-xl px-4 py-3
     placeholder:text-white/30 focus:outline-none focus:border-neon transition;
+  backdrop-filter: blur(8px);
+}
+.input:focus {
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.15);
 }
 
 .chip {
   @apply inline-flex items-center gap-1 text-xs bg-white/10 rounded-full px-3 py-1;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.chip-gold {
+  @apply inline-flex items-center gap-1 text-xs rounded-full px-3 py-1 font-semibold;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  color: #fde68a;
 }
 
 .vibe-btn {
   @apply border border-white/15 rounded-xl px-4 py-3 text-sm font-medium
     hover:border-neon transition cursor-pointer;
+  backdrop-filter: blur(8px);
+  transition: all 0.2s ease;
+}
+.vibe-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(192, 132, 252, 0.2);
 }
 .vibe-btn.active {
   @apply border-neon bg-neon/15 text-white;
+  box-shadow: 0 0 16px rgba(192, 132, 252, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
+
+/* ---------- Taste DNA bars (premium) ---------- */
+.dna-bar {
+  @apply h-2 rounded-full overflow-hidden bg-white/10;
+}
+.dna-fill {
+  @apply h-full rounded-full;
+  background: linear-gradient(90deg, #c084fc, #f472b6, #fbbf24);
+  box-shadow: 0 0 12px rgba(192, 132, 252, 0.5);
+  transition: width 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---------- Entrance animations ---------- */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-up { animation: fadeUp 0.5s ease both; }
+.animate-fade-up-1 { animation: fadeUp 0.5s 0.08s ease both; }
+.animate-fade-up-2 { animation: fadeUp 0.5s 0.16s ease both; }
+.animate-fade-up-3 { animation: fadeUp 0.5s 0.24s ease both; }
+
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.animate-float-slow { animation: floatSlow 5s ease-in-out infinite; }
+
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(251, 191, 36, 0.22); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(251, 191, 36, 0.38); }

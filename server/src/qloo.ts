@@ -514,7 +514,8 @@ export async function debugQloo(): Promise<Record<string, unknown>> {
   } catch (e) {
     out.resolve_error = (e as Error).message.slice(0, 120);
   }
-  // 2. Insights tests (with and without signals)
+    out.insights_no_filter = { error: (e as Error).message.slice(0, 100) };
+  }
   for (const cat of ["movie", "restaurant", "music"] as const) {
     try {
       const hits = await insights(cat, [], cat === "restaurant" ? "Pune" : "", 3);
