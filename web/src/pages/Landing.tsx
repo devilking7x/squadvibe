@@ -75,6 +75,43 @@ export default function Landing({ nav }: { nav: (h: string) => void }) {
           </button>
         </div>
         {joinErr && <p className="text-red-400 text-sm mt-2">{joinErr}</p>}
+
+        {/* Sample plan preview */}
+        <div className="max-w-lg mx-auto mt-12 animate-fade-up-2">
+          <div className="card card-premium text-left relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-neon via-hot to-gold"></div>
+            <div className="flex items-center justify-between mb-4">
+              <p className="chip-gold">✨ Sample squad plan</p>
+              <p className="text-white/40 text-xs">3 friends · Pune</p>
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
+                <span className="text-2xl">🎬</span>
+                <div className="flex-1">
+                  <p className="font-semibold text-sm">Dune: Part Two</p>
+                  <p className="text-white/40 text-xs">Sci-fi epic · 96% squad match</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
+                <span className="text-2xl">🍜</span>
+                <div className="flex-1">
+                  <p className="font-semibold text-sm">Midnight Ramen Bar</p>
+                  <p className="text-white/40 text-xs">Japanese · 92% squad match</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10">
+                <span className="text-2xl">🎵</span>
+                <div className="flex-1">
+                  <p className="font-semibold text-sm">A.R. Rahman Essentials</p>
+                  <p className="text-white/40 text-xs">Playlist · 89% squad match</p>
+                </div>
+              </div>
+            </div>
+            <button className="btn-gold w-full mt-4 text-sm py-2.5" onClick={demo} disabled={demoBusy}>
+              {demoBusy ? "Seeding demo…" : "🎉 Get my squad's plan"}
+            </button>
+          </div>
+        </div>
       </section>
 
       {/* HOW IT WORKS */}
@@ -87,7 +124,7 @@ export default function Landing({ nav }: { nav: (h: string) => void }) {
             { e: "🎬", t: "One perfect plan", d: "A movie + dinner spot + playlist everyone agrees on. Zero fights." },
           ].map((s) => (
             <div key={s.t} className="card text-center">
-              <div className="text-4xl mb-3">{s.e}</div>
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-neon/30 to-hot/30 border border-neon/20 flex items-center justify-center text-2xl mb-3 mx-auto shadow-lg">{s.e}</div>
               <h3 className="font-display font-bold mb-2">{s.t}</h3>
               <p className="text-white/55 text-sm">{s.d}</p>
             </div>
