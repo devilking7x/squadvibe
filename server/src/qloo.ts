@@ -486,6 +486,34 @@ export async function debugQloo(): Promise<Record<string, unknown>> {
     }
   }
   out.search_tests = searchTests;
+  // 2b. Resolve demo favorites and test insights WITH real signals
+  try {
+    const demoFavs = ["Interstellar", "A.R. Rahman", "biryani"];
+    const resolvedIds: string[] = [];
+    for (const fav of demoFavs) {
+      const r = await cachedResolve(fav);
+      resolvedIds.push(...r.ids.slice(0, 2));
+    }
+    out.resolved_ids = { count: resolvedIds.length, sample: resolvedIds[0]?.slice(0, 8) ?? null };
+    // Test insights WITH signals
+    for (const cat of ["movie", "restaurant", "music"] as const) {
+      try {
+        const hits = await insights(cat, resolvedIds.slice(0, 10), cat === "restaurant" ? "Pune" : "", 3);
+        (out as Record<string, unknown>)[`insights_${cat}_with_signals`] = {
+          ok: true,
+          count: hits.length,
+          first: hits[0]?.name?.slice(0, 40) ?? null,
+        };
+      } catch (e) {
+        (out as Record<string, unknown>)[`insights_${cat}_with_signals`] = {
+          ok: false,
+          error: (e as Error).message.slice(0, 200),
+        };
+      }
+    }
+  } catch (e) {
+    out.resolve_error = (e as Error).message.slice(0, 120);
+  }
   // 2. Insights tests (with and without signals)
   for (const cat of ["movie", "restaurant", "music"] as const) {
     try {
