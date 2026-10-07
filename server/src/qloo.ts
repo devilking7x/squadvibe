@@ -51,9 +51,8 @@ async function searchEntitiesWithTypes(
   query: string,
   limit = 3
 ): Promise<Array<{ id: string; types: string[] }>> {
-  const host = BASE.replace(/\/v2\/?$/, "");
   const res = await fetch(
-    `${host}/search?query=${encodeURIComponent(query)}&limit=${limit}`,
+    `${BASE}/search?query=${encodeURIComponent(query)}&limit=${limit}`,
     { headers: headers(), signal: AbortSignal.timeout(20000) }
   );
   if (!res.ok) return [];
@@ -111,8 +110,10 @@ async function insights(
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(30000),
   });
-  if (!res.ok)
-    throw new Error(`Qloo insights ${res.status}`);
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Qloo insights ${res.status}: ${errBody.slice(0, 200)}`);
+  }
   const data = (await res.json()) as {
     results?: { entities?: Array<Record<string, unknown>> };
   };
