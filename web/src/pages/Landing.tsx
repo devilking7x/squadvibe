@@ -9,7 +9,10 @@ export default function Landing({ nav }: { nav: (h: string) => void }) {
   const join = async () => {
     setJoinErr("");
     const c = code.trim().toUpperCase();
-    if (!c) return;
+    if (!c) {
+      setJoinErr("Enter your squad code first");
+      return;
+    }
     try {
       const { squad } = await api.getSquad(c);
       nav(`#/s/${squad.id}`);
