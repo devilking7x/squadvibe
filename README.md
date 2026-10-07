@@ -1,6 +1,13 @@
 # 🎭 SquadVibe
 
+[![live](https://img.shields.io/badge/live-squadvibe.onrender.com-brightgreen.svg)](https://squadvibe.onrender.com)
+[![qloo](https://img.shields.io/badge/qloo-taste_api_live-blueviolet.svg)](https://squadvibe.onrender.com)
+[![license](https://img.shields.io/badge/license-MIT-gold.svg)](LICENSE)
+[![tests](https://img.shields.io/badge/tests-11%2F11-brightgreen.svg)](#-test)
+
 **End the "kya karein?" fight forever.** SquadVibe finds the movie, dinner spot & music your whole squad will love — grounded in [Qloo](https://www.qloo.com)'s Taste Intelligence (250M+ entities across film, music, dining & more).
+
+![SquadVibe demo](web/public/demo.gif)
 
 Built for the **Qloo Agent Hackathon 2026** ($25,000 prizes).
 
