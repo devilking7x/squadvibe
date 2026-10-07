@@ -57,13 +57,19 @@ async function searchEntitiesWithTypes(
   );
   if (!res.ok) return [];
   const data = (await res.json()) as {
-    results?: { entities?: Array<Record<string, unknown>> };
+    results?: Array<Record<string, unknown>>;
   };
-  return (data.results?.entities ?? [])
-    .map((e) => ({
-      id: String(e.entity_id ?? ""),
-      types: Array.isArray(e.types) ? (e.types as string[]) : [],
-    }))
+  return (data.results ?? [])
+    .map((e) => {
+      const types: string[] = [];
+      if (typeof e.type === "string") types.push(e.type);
+      if (typeof e.subtype === "string") types.push(e.subtype);
+      if (Array.isArray(e.types)) types.push(...(e.types as string[]));
+      return {
+        id: String(e.entity_id ?? ""),
+        types: [...new Set(types)],
+      };
+    })
     .filter((e) => e.id);
 }
 
@@ -115,9 +121,9 @@ async function insights(
     throw new Error(`Qloo insights ${res.status}: ${errBody.slice(0, 200)}`);
   }
   const data = (await res.json()) as {
-    results?: { entities?: Array<Record<string, unknown>> };
+    results?: Array<Record<string, unknown>>;
   };
-  const hits = (data.results?.entities ?? [])
+  const hits = (data.results ?? [])
     .slice(0, limit * 2) // fetch extra to allow filtering
     .map((e) => mapEntity(e, category));
   // For restaurants, filter out non-dining places (malls, zoos, hotels, etc.)
@@ -188,9 +194,9 @@ export async function trending(
   });
   if (!res.ok) throw new Error(`Qloo trends ${res.status}`);
   const data = (await res.json()) as {
-    results?: { entities?: Array<Record<string, unknown>> };
+    results?: Array<Record<string, unknown>>;
   };
-  return (data.results?.entities ?? [])
+  return (data.results ?? [])
     .slice(0, limit)
     .map((e) => mapEntity(e, category));
 }
@@ -466,7 +472,7 @@ export async function debugQloo(): Promise<Record<string, unknown>> {
       const text = await res.text();
       let parsed: unknown = null;
       try { parsed = JSON.parse(text); } catch { /* raw */ }
-      const entities = (parsed as { results?: { entities?: unknown[] } })?.results?.entities ?? [];
+      const entities = (parsed as { results?: unknown[] })?.results ?? [];
       searchTests[label] = {
         status: res.status,
         count: entities.length,
