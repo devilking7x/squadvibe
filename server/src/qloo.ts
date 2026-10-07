@@ -452,13 +452,32 @@ export async function debugQloo(): Promise<Record<string, unknown>> {
     out.error = "no API key";
     return out;
   }
-  // 1. Search test
-  try {
-    const found = await searchEntitiesWithTypes("Interstellar", 3);
-    out.search = { ok: true, count: found.length, sample: found[0]?.id?.slice(0, 8) ?? null };
-  } catch (e) {
-    out.search = { ok: false, error: (e as Error).message.slice(0, 120) };
+  // 1. Search test — try multiple query formats
+  const searchTests: Record<string, unknown> = {};
+  for (const [label, url] of [
+    ["basic", `${BASE}/search?query=Interstellar&limit=3`],
+    ["with_type", `${BASE}/search?query=Interstellar&types=urn%3Aentity%3Amovie&limit=3`],
+  ] as Array<[string, string]>) {
+    try {
+      const res = await fetch(url, {
+        headers: headers(),
+        signal: AbortSignal.timeout(20000),
+      });
+      const text = await res.text();
+      let parsed: unknown = null;
+      try { parsed = JSON.parse(text); } catch { /* raw */ }
+      const entities = (parsed as { results?: { entities?: unknown[] } })?.results?.entities ?? [];
+      searchTests[label] = {
+        status: res.status,
+        count: entities.length,
+        raw_keys: parsed ? Object.keys(parsed as object).slice(0, 5) : null,
+        raw_sample: text.slice(0, 300),
+      };
+    } catch (e) {
+      searchTests[label] = { ok: false, error: (e as Error).message.slice(0, 120) };
+    }
   }
+  out.search_tests = searchTests;
   // 2. Insights tests (with and without signals)
   for (const cat of ["movie", "restaurant", "music"] as const) {
     try {
@@ -471,7 +490,7 @@ export async function debugQloo(): Promise<Record<string, unknown>> {
     } catch (e) {
       (out as Record<string, unknown>)[`insights_${cat}`] = {
         ok: false,
-        error: (e as Error).message.slice(0, 120),
+        error: (e as Error).message.slice(0, 200),
       };
     }
   }
