@@ -24,11 +24,19 @@ function templateNarrative(
   music: TasteHit[],
   dna: TasteDNA | null
 ): string {
+  const hasPicks = movie.length > 0 || restaurant.length > 0 || music.length > 0;
   const m = movie[0] ? cleanName(movie[0]) : "a great film";
   const r = restaurant[0] ? cleanName(restaurant[0]) : "a cozy dinner spot";
   const mu = music[0] ? cleanName(music[0]) : "a killer playlist";
   const crew = memberNames.length > 0 ? memberNames.join(", ") : "the crew";
   const topCat = dna?.categories?.[0]?.label ?? "great taste";
+  if (!hasPicks) {
+    return (
+      `Here's the thing about ${crew} — your squad's DNA screams "${topCat}", ` +
+      `but Qloo couldn't find matching picks this time. Add more favorites ` +
+      `and regenerate — the overlap is in there somewhere. 🎯`
+    );
+  }
   return (
     `Here's the thing about ${crew} — Qloo looked at everyone's favorites and found the overlap nobody expected. ` +
     `Dinner at ${r}, then ${m}, closing the night with ${mu}. ` +
@@ -51,6 +59,7 @@ export async function narratePlan(
   });
   if (!NEBIUS_KEY) return fallback();
 
+  const hasPicks = movie.length > 0 || restaurant.length > 0 || music.length > 0;
   const picks = [
     `movies: ${movie.map(cleanName).slice(0, 3).join(", ") || "n/a"}`,
     `restaurants: ${restaurant.map(cleanName).slice(0, 3).join(", ") || "n/a"}`,
@@ -58,11 +67,12 @@ export async function narratePlan(
   ].join("\n");
   const members = memberNames.join(", ") || "the squad";
 
-  const prompt =
-    `You are SquadVibe's hype narrator. Squad "${squadName}" (${members}, ${vibe} vibe) got these Qloo taste-matched picks:\n${picks}\n\n` +
-    `Write a fun 3-4 sentence "why this plan is perfect for YOUR squad" story. ` +
-    `Mention 1-2 member names naturally. Playful tone, Roman Hindi + English mix is welcome (like "scene set hai"). ` +
-    `No bullet points, just flowing text. Max 80 words. ONLY the story, no preamble.`;
+  const prompt = hasPicks
+    ? `You are SquadVibe's hype narrator. Squad "${squadName}" (${members}, ${vibe} vibe) got these Qloo taste-matched picks:\n${picks}\n\n` +
+      `Write a fun 3-4 sentence "why this plan is perfect for YOUR squad" story. ` +
+      `Mention 1-2 member names naturally. Playful tone, Roman Hindi + English mix is welcome (like "scene set hai"). ` +
+      `No bullet points, just flowing text. Max 80 words. ONLY the story, no preamble.`
+    : `You are SquadVibe's hype narrator. Squad "${squadName}" (${members}, ${vibe} vibe) didn't get Qloo picks this time — tell them honestly (1-2 sentences) to add more favorites and regenerate. Playful tone, Roman Hindi + English mix welcome. Max 40 words. ONLY the text, no preamble.`;
 
   try {
     const res = await fetch(`${NEBIUS_URL}/chat/completions`, {
