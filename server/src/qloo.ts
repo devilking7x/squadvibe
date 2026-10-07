@@ -123,7 +123,8 @@ async function insights(
   const data = (await res.json()) as {
     results?: Array<Record<string, unknown>>;
   };
-  const hits = (data.results ?? [])
+  const resultsArray = Array.isArray(data.results) ? data.results : [];
+  const hits = resultsArray
     .slice(0, limit * 2) // fetch extra to allow filtering
     .map((e) => mapEntity(e, category));
   // For restaurants, filter out non-dining places (malls, zoos, hotels, etc.)
@@ -196,7 +197,8 @@ export async function trending(
   const data = (await res.json()) as {
     results?: Array<Record<string, unknown>>;
   };
-  return (data.results ?? [])
+  const resultsArray = Array.isArray(data.results) ? data.results : [];
+  return resultsArray
     .slice(0, limit)
     .map((e) => mapEntity(e, category));
 }
