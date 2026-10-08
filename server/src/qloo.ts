@@ -106,13 +106,20 @@ async function insights(
 ): Promise<TasteHit[]> {
   // Qloo hackathon API: GET with query-string params (not POST + JSON body),
   // and `take` (not `limit`) controls result count. Confirmed by Qloo Support.
+  // NOTE: signal.interests.entities must use LITERAL commas, not %2C-encoded.
+  // URLSearchParams encodes commas, so we build the entities param manually.
   const params = new URLSearchParams({
     "filter.type": URNS[category],
     take: String(limit * 2), // fetch extra to allow filtering
   });
-  if (signalIds.length) params.set("signal.interests.entities", signalIds.join(","));
   if (location.trim()) params.set("filter.location.query", location.trim());
-  const res = await fetch(`${BASE}/insights?${params.toString()}`, {
+  let queryString = params.toString();
+  if (signalIds.length) {
+    // Append with literal commas (not URL-encoded)
+    const entitiesParam = `signal.interests.entities=${signalIds.join(",")}`;
+    queryString = queryString ? `${queryString}&${entitiesParam}` : entitiesParam;
+  }
+  const res = await fetch(`${BASE}/insights?${queryString}`, {
     method: "GET",
     headers: headers(),
     signal: AbortSignal.timeout(30000),
