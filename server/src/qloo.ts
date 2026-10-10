@@ -47,6 +47,325 @@ export interface ResolvedFavorite {
   types: string[];
 }
 
+/** Full taste profile of one Qloo entity, from Search API properties. */
+export interface EntityTaste {
+  id: string;
+  name: string;
+  types: string[];
+  genres: string[];
+  keywords: string[];
+  popularity: number;
+  description: string;
+}
+
+const norm = (s: string): string => s.toLowerCase().trim();
+
+function pushStr(v: unknown, set: Set<string>): void {
+  if (typeof v === "string" && v.trim()) set.add(norm(v));
+}
+function pushArr(v: unknown, set: Set<string>): void {
+  if (Array.isArray(v)) for (const x of v) pushStr(x, set);
+}
+
+/** Extract taste signals from a Search entity's properties, per category. */
+function extractTaste(
+  e: Record<string, unknown>,
+  category: "movie" | "music" | "restaurant"
+): { genres: string[]; keywords: string[] } {
+  const props = (e.properties ?? {}) as Record<string, unknown>;
+  const genres = new Set<string>();
+  const keywords = new Set<string>();
+  if (category === "movie") {
+    pushArr(props.genres, genres);
+    pushArr(props.keywords, keywords);
+  } else if (category === "music") {
+    pushArr(props.genre_categories, genres);
+    pushArr(props.cultural_genres, genres);
+    pushArr(props.music_characteristics, keywords);
+    pushArr(props.adjectives_for_performance_style, keywords);
+  } else {
+    pushStr(props.primary_genre, genres);
+    const kw = props.keywords;
+    if (Array.isArray(kw))
+      for (const k of kw) pushStr((k as Record<string, unknown>).name, keywords);
+    pushStr(props.good_for, keywords);
+  }
+  return { genres: [...genres], keywords: [...keywords] };
+}
+
+function categoryForTypes(types: string[]): "movie" | "music" | "restaurant" | null {
+  const j = types.join(" ").toLowerCase();
+  if (/(movie|tv_series|tv show)/.test(j)) return "movie";
+  if (/(artist|album|track|music)/.test(j)) return "music";
+  if (/(place|restaurant|dining)/.test(j)) return "restaurant";
+  return null;
+}
+
+function toTaste(e: Record<string, unknown>): EntityTaste {
+  const types: string[] = [];
+  if (typeof e.type === "string") types.push(e.type);
+  if (typeof e.subtype === "string") types.push(e.subtype);
+  if (Array.isArray(e.types)) types.push(...(e.types as string[]));
+  const uniq = [...new Set(types)];
+  const cat = categoryForTypes(uniq) ?? "movie";
+  const { genres, keywords } = extractTaste(e, cat);
+  const props = (e.properties ?? {}) as Record<string, unknown>;
+  return {
+    id: String(e.entity_id ?? ""),
+    name: String(e.name ?? "Untitled"),
+    types: uniq,
+    genres,
+    keywords,
+    popularity: typeof e.popularity === "number" ? e.popularity : 0,
+    description: String(props.short_description ?? props.description ?? "").slice(0, 280),
+  };
+}
+
+/** Search with full taste extraction. Literal matching — scoring happens later. */
+async function searchDetailed(
+  query: string,
+  category: "movie" | "music" | "restaurant",
+  limit = 12
+): Promise<EntityTaste[]> {
+  const params = new URLSearchParams({
+    query,
+    types: URNS[category],
+    limit: String(limit),
+  });
+  const res = await fetch(`${BASE}/search?${params}`, {
+    headers: headers(),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { results?: Array<Record<string, unknown>> };
+  return (data.results ?? []).map(toTaste).filter((t) => t.id);
+}
+
+// Detailed taste cache — same TTL discipline as entityCache.
+const tasteCache = new Map<string, { at: number; taste: EntityTaste[] }>();
+
+async function cachedTaste(query: string): Promise<EntityTaste[]> {
+  const key = query.toLowerCase().trim();
+  const hit = tasteCache.get(key);
+  if (hit && Date.now() - hit.at < ENTITY_TTL) return hit.taste;
+  let taste: EntityTaste[] = [];
+  try {
+    const res = await fetch(
+      `${BASE}/search?query=${encodeURIComponent(query)}&limit=3`,
+      { headers: headers(), signal: AbortSignal.timeout(20000) }
+    );
+    if (res.ok) {
+      const data = (await res.json()) as { results?: Array<Record<string, unknown>> };
+      taste = (data.results ?? []).map(toTaste).filter((t) => t.id);
+    }
+  } catch {
+    taste = [];
+  }
+  if (tasteCache.size > 500) tasteCache.clear();
+  tasteCache.set(key, { at: Date.now(), taste });
+  return taste;
+}
+
+function tasteHit(t: EntityTaste, category: string, matchedFavorites?: string[]): TasteHit {
+  // Restaurants: filter out non-dining places (malls, zoos, hotels, etc.)
+  return {
+    name: t.name,
+    entityId: t.id,
+    category,
+    description: t.description,
+    popularity: t.popularity,
+    matchedFavorites,
+  };
+}
+
+const NON_DINING = /mall|zoo|hotel|park|museum|theater|theatre|campus|hospital|airport|station|fort|ghat|mountain|temple|beach|waterfall|garden|lake|dam|bridge/i;
+
+interface BlendInput {
+  member: string;
+  favorite: string;
+  taste: EntityTaste;
+  category: "movie" | "music" | "restaurant";
+}
+
+/**
+ * Taste Blend — SquadVibe's Search-powered recommendation engine.
+ *
+ * The hackathon Insights endpoint returns 0 results for valid signals, so we
+ * blend instead: resolve every favorite to Qloo taste data (genres, keywords,
+ * popularity), build a per-category squad genre profile, generate candidates
+ * by searching the squad's top genres, then score each candidate by
+ * member coverage (fraction of members whose taste it touches) blended with
+ * genre overlap and Qloo popularity. All entities, genres and popularity
+ * scores are real Qloo data — the blending math is ours, and labeled as such.
+ */
+async function tasteBlend(
+  favorites: { member: string; favorite: string }[],
+  location: string
+): Promise<SquadPlanResult> {
+  // 1. Resolve every favorite -> detailed taste (parallel, cached).
+  // Take the single best result per favorite: exact name match wins, then
+  // highest popularity, preferring results with real taste data. Taking top-N
+  // pollutes categories — e.g. there is an *artist* named "Interstellar"
+  // alongside the film, and one named "Dune" too.
+  const resolved: ResolvedFavorite[] = [];
+  const inputs: BlendInput[] = [];
+  await Promise.all(
+    favorites.map(async (f) => {
+      const details = await cachedTaste(f.favorite);
+      const q = norm(f.favorite);
+      const withTaste = details.filter((d) => d.genres.length + d.keywords.length > 0);
+      const pool = withTaste.length ? withTaste : details;
+      const richness = (t: EntityTaste): number => t.genres.length + t.keywords.length;
+      const best = [...pool].sort((a, b) => {
+        const aExact = norm(a.name) === q ? 0 : 1;
+        const bExact = norm(b.name) === q ? 0 : 1;
+        if (aExact !== bExact) return aExact - bExact;
+        // Richer taste data wins ties (movie Dune: 253 signals vs artist Dune: 3)
+        const r = richness(b) - richness(a);
+        return r !== 0 ? r : b.popularity - a.popularity;
+      })[0];
+      const r: ResolvedFavorite = { member: f.member, favorite: f.favorite, ids: [], types: [] };
+      if (best) {
+        r.ids.push(best.id);
+        r.types.push(...best.types);
+        const cat = categoryForTypes(best.types);
+        if (cat) inputs.push({ member: f.member, favorite: f.favorite, taste: best, category: cat });
+      }
+      r.types = [...new Set(r.types)];
+      resolved.push(r);
+    })
+  );
+
+  // 2. Per category: profile -> candidates -> scored picks
+  const out: SquadPlanResult = { movie: [], restaurant: [], music: [], resolved, engine: "blend" };
+  await Promise.all(
+    (["movie", "restaurant", "music"] as const).map(async (cat) => {
+      out[cat] = await blendCategory(
+        cat,
+        inputs.filter((i) => i.category === cat),
+        inputs,
+        location
+      );
+    })
+  );
+  return out;
+}
+
+async function blendCategory(
+  category: "movie" | "music" | "restaurant",
+  catInputs: BlendInput[],
+  allInputs: BlendInput[],
+  location: string
+): Promise<TasteHit[]> {
+  const useInputs = catInputs.length ? catInputs : allInputs;
+  if (!useInputs.length) {
+    // No favorites at all — popular picks in the category.
+    const fallbackQuery = category === "movie" ? "film" : category === "music" ? "music" : location || "restaurant";
+    const cands = await searchDetailed(fallbackQuery, category, 10);
+    return cands.slice(0, 5).map((c) => tasteHit(c, category));
+  }
+
+  // Squad genre profile: genre -> how many favorites carry it.
+  // CORE genres (shared by 2+ favorites, e.g. Sci-Fi for Interstellar+Dune)
+  // are the strong signal; generic one-off genres (Drama) are weak.
+  const genreCount = new Map<string, number>();
+  for (const inp of useInputs)
+    for (const g of inp.taste.genres) genreCount.set(g, (genreCount.get(g) ?? 0) + 1);
+  const coreGenres = new Set(
+    [...genreCount.entries()].filter(([, c]) => c > 1).map(([g]) => g)
+  );
+  const effectiveCore = coreGenres.size ? coreGenres : new Set(genreCount.keys());
+  // Candidate-generation queries.
+  // Shared keywords (2+ favorites, e.g. "space travel") are the strongest
+  // thematic signal. Single-favorite keywords are noisy ("title directed by
+  // male") — only use them for single-input categories, minus junk patterns.
+  // Genres backstop everything ("sci-fi" as a query is weak, but harmless).
+  const kwCount = new Map<string, number>();
+  const JUNK_KW = /directed by|written by|^title\b|loss of |father|mother|\bson\b|daughter|husband|wife/i;
+  for (const inp of useInputs)
+    for (const k of inp.taste.keywords) {
+      if (JUNK_KW.test(k)) continue; // "title directed by male" etc. are noise
+      kwCount.set(k, (kwCount.get(k) ?? 0) + 1);
+    }
+  let kwTerms: string[];
+  const sharedKw = [...kwCount.entries()].filter(([, c]) => c > 1);
+  if (sharedKw.length) {
+    kwTerms = sharedKw
+      .sort((a, b) => b[1] - a[1] || b[0].split(/\s+/).length - a[0].split(/\s+/).length)
+      .slice(0, 4)
+      .map(([k]) => k);
+  } else if (useInputs.length <= 1) {
+    kwTerms = [...kwCount.keys()]
+      .filter((k) => !JUNK_KW.test(k) && k.split(/\s+/).length <= 4)
+      .slice(0, 4);
+  } else {
+    kwTerms = [];
+  }
+  const topTerms = [
+    ...kwTerms,
+    ...[...genreCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([g]) => g),
+  ];
+  if (!topTerms.length) topTerms.push(category === "restaurant" ? location || "restaurant" : category);
+
+  const seen = new Map<string, EntityTaste>();
+  const excludeIds = new Set(useInputs.map((i) => i.taste.id));
+  const excludeNames = new Set(useInputs.map((i) => norm(i.taste.name)));
+  await Promise.all(
+    topTerms.map(async (term) => {
+      let cands = await searchDetailed(term, category, 12);
+      // Restaurants: bias search with location when available
+      if (category === "restaurant" && location.trim() && !/\blocation\b/i.test(term)) {
+        const loc = await searchDetailed(`${term} ${location.trim()}`, category, 8);
+        cands = [...cands, ...loc];
+      }
+      for (const c of cands) {
+        if (category === "restaurant" && NON_DINING.test(c.name + " " + c.description)) continue;
+        if (!seen.has(c.id) && !excludeIds.has(c.id) && !excludeNames.has(norm(c.name)))
+          seen.set(c.id, c);
+      }
+    })
+  );
+
+  // Score: member coverage (40%) + core-genre match (40%) + popularity (20%).
+  // Quality gates: movies/music MUST share a core squad genre (kills literal
+  // keyword noise like father-themed dramas for sci-fi fans); restaurants may
+  // match on cuisine keywords instead.
+  const members = [...new Set(useInputs.map((i) => i.member))];
+  const tagsOf = (t: EntityTaste): Set<string> => new Set([...t.genres, ...t.keywords]);
+  const scored = [...seen.values()].map((cand) => {
+    const candTags = tagsOf(cand);
+    const coveredMembers = new Set<string>();
+    const matchedFav: string[] = [];
+    for (const inp of useInputs) {
+      const inpTags = tagsOf(inp.taste);
+      if ([...candTags].some((t) => inpTags.has(t))) {
+        coveredMembers.add(inp.member);
+        const label = `${inp.member}: ${inp.favorite}`;
+        if (!matchedFav.includes(label)) matchedFav.push(label);
+      }
+    }
+    const coverage = members.length ? coveredMembers.size / members.length : 0;
+    let coreHits = 0;
+    for (const g of cand.genres) if (effectiveCore.has(g)) coreHits++;
+    const coreMatch = cand.genres.length ? coreHits / cand.genres.length : 0;
+    let kwOverlap = 0;
+    for (const k of cand.keywords) if (kwCount.has(k)) kwOverlap++;
+    const keywordOverlap = cand.keywords.length ? kwOverlap / cand.keywords.length : 0;
+    const score = coverage * 0.4 + coreMatch * 0.4 + cand.popularity * 0.2;
+    return { cand, score, coreMatch, keywordOverlap, matchedFav: matchedFav.slice(0, 4) };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const gated = scored.filter((s) =>
+    category === "restaurant"
+      ? s.coreMatch > 0 || s.keywordOverlap > 0
+      : s.coreMatch > 0
+  );
+  if (process.env.BLEND_DEBUG) {
+    console.log(`[blend:${category}] core=${[...effectiveCore].join(",")} terms=${topTerms.join("|")} seen=${seen.size} gated=${gated.length}`);
+  }
+  return gated.slice(0, 5).map((s) => tasteHit(s.cand, category, s.matchedFav));
+}
+
 async function searchEntitiesWithTypes(
   query: string,
   limit = 3
@@ -184,31 +503,18 @@ const MOCK_TRENDS: Record<string, TasteHit[]> = {
   ],
 };
 
-/** Qloo Trends API — what's hot right now in a category. */
+/** Qloo Trends API — 404 on the hackathon endpoint; kept as a stub so the
+ *  plan pipeline never throws. The "Hidden Gems" variant replaces it. */
 export async function trending(
   category: string,
   location: string,
   limit = 3
 ): Promise<TasteHit[]> {
+  void category;
+  void location;
+  void limit;
   if (MOCK) return (MOCK_TRENDS[category] ?? []).slice(0, limit);
-  if (!API_KEY) throw new Error("QLOO_API_KEY not configured");
-  const params = new URLSearchParams({
-    "filter.type": URNS[category] ?? URNS.movie,
-    limit: String(limit),
-  });
-  if (location.trim()) params.set("filter.location.query", location.trim());
-  const res = await fetch(`${BASE}/trends?${params}`, {
-    headers: headers(),
-    signal: AbortSignal.timeout(20000),
-  });
-  if (!res.ok) throw new Error(`Qloo trends ${res.status}`);
-  const data = (await res.json()) as {
-    results?: Array<Record<string, unknown>>;
-  };
-  const resultsArray = Array.isArray(data.results) ? data.results : [];
-  return resultsArray
-    .slice(0, limit)
-    .map((e) => mapEntity(e, category));
+  return [];
 }
 
 export interface ResolvedFavorite {
@@ -223,12 +529,55 @@ export interface SquadPlanResult {
   music: TasteHit[];
   /** per-member resolved entity ids (for true affinity scoring) */
   resolved: ResolvedFavorite[];
+  /** which recommendation engine produced this plan */
+  engine?: "insights" | "blend" | "mock";
+}
+
+/** Insights path — kept for when/if Qloo fixes the hackathon endpoint. */
+async function squadPlanViaInsights(
+  favorites: { member: string; favorite: string }[],
+  location: string
+): Promise<SquadPlanResult> {
+  // 1. Resolve all favorites -> entity ids (parallel, cached, keep member mapping)
+  const resolved: ResolvedFavorite[] = await Promise.all(
+    favorites.map(async (f) => {
+      const { ids, types } = await cachedResolve(f.favorite);
+      return { ...f, ids, types };
+    })
+  );
+  const allIds = [...new Set(resolved.flatMap((r) => r.ids))].slice(0, 20);
+
+  // 2. Per-category insights over the combined signals = squad intersection
+  const [movie, restaurant, music] = await Promise.all([
+    insights("movie", allIds, "", 5).catch(() => [] as TasteHit[]),
+    insights("restaurant", allIds, location, 5).catch(() => [] as TasteHit[]),
+    insights("music", allIds, "", 5).catch(() => [] as TasteHit[]),
+  ]);
+
+  // 3. Tag each pick with contributing favorites (simple heuristic: all)
+  const tag = (h: TasteHit): TasteHit => ({
+    ...h,
+    matchedFavorites: resolved
+      .filter((r) => r.ids.length > 0)
+      .slice(0, 4)
+      .map((r) => `${r.member}: ${r.favorite}`),
+  });
+  return {
+    movie: movie.map(tag),
+    restaurant: restaurant.map(tag),
+    music: music.map(tag),
+    resolved,
+    engine: "insights",
+  };
 }
 
 /**
- * Core SquadVibe mechanic: resolve EVERY member's favorites to Qloo entity
- * ids, then ask Insights for picks matching the COMBINED taste — the
- * intersection the whole squad will love. matchedFavorites tracks which
+ * Core SquadVibe mechanic: resolve EVERY member's favorites to Qloo taste
+ * data, then find the intersection the whole squad will love.
+ *
+ * Tries Qloo Insights first; the hackathon endpoint currently returns 0
+ * results for valid signals, so we fall back to the Taste Blend engine
+ * (Search-powered, same Qloo taste data). matchedFavorites tracks which
  * inputs influenced each pick so the UI can explain "why this works".
  */
 export async function squadPlan(
@@ -259,87 +608,49 @@ export async function squadPlan(
         ids: [`mock-${f.favorite}`],
         types: mockType(f.favorite),
       })),
+      engine: "mock",
     };
   }
   if (!API_KEY) throw new Error("QLOO_API_KEY not configured");
 
-  // 1. Resolve all favorites -> entity ids (parallel, cached, keep member mapping)
-  const resolved: ResolvedFavorite[] = await Promise.all(
-    favorites.map(async (f) => {
-      const { ids, types } = await cachedResolve(f.favorite);
-      return { ...f, ids, types };
-    })
-  );
-  const allIds = [...new Set(resolved.flatMap((r) => r.ids))].slice(0, 20);
-
-  // 2. Per-category insights over the combined signals = squad intersection
-  const [movie, restaurant, music] = await Promise.all([
-    insights("movie", allIds, "", 5).catch(() => [] as TasteHit[]),
-    insights("restaurant", allIds, location, 5).catch(() => [] as TasteHit[]),
-    insights("music", allIds, "", 5).catch(() => [] as TasteHit[]),
-  ]);
-
-  // 3. Tag each pick with contributing favorites (simple heuristic: all)
-  const tag = (h: TasteHit): TasteHit => ({
-    ...h,
-    matchedFavorites: resolved
-      .filter((r) => r.ids.length > 0)
-      .slice(0, 4)
-      .map((r) => `${r.member}: ${r.favorite}`),
-  });
   void vibe;
-  return {
-    movie: movie.map(tag),
-    restaurant: restaurant.map(tag),
-    music: music.map(tag),
-    resolved,
-  };
+  // Insights first (no-op while the endpoint returns 0), then Taste Blend.
+  try {
+    const via = await squadPlanViaInsights(favorites, location);
+    const total = via.movie.length + via.restaurant.length + via.music.length;
+    if (total > 0) return via;
+  } catch {
+    /* fall through to blend */
+  }
+  return tasteBlend(favorites, location);
 }
 
 /**
- * TRUE intersection scoring — the 10/10 differentiator.
- * For each member, run Insights with ONLY their signals to get their personal
- * top picks. A candidate's squad affinity = fraction of members whose personal
- * top-10 contains it. A pick loved by 3/3 members scores 100 — that's a real
- * intersection, derived from Qloo, not a handmade heuristic.
+ * Squad affinity — the intersection score.
+ * Derived from each pick's matchedFavorites (which member favorites share
+ * taste tags with it): a pick touching 3/3 members scores 100. No extra API
+ * calls — the blend engine already computed the taste overlap.
  */
 export async function squadAffinity(
   resolved: ResolvedFavorite[],
   candidates: { movie: TasteHit[]; restaurant: TasteHit[]; music: TasteHit[] },
   location: string
 ): Promise<Map<string, number>> {
+  void location;
   const scores = new Map<string, number>();
-  if (MOCK || !API_KEY) return scores;
-
-  // Group resolved ids by member
-  const byMember = new Map<string, string[]>();
-  for (const r of resolved) {
-    const arr = byMember.get(r.member) ?? [];
-    arr.push(...r.ids);
-    byMember.set(r.member, [...new Set(arr)].slice(0, 10));
-  }
-  const members = [...byMember.keys()];
+  const members = [...new Set(resolved.map((r) => r.member))];
   if (members.length === 0) return scores;
+  const byLower = new Map(members.map((m) => [m.toLowerCase(), m]));
 
-  // Per member per category: personal top picks (parallel)
-  const personal = await Promise.all(
-    members.map(async (m) => {
-      const ids = byMember.get(m)!;
-      const [movie, restaurant, music] = await Promise.all([
-        insights("movie", ids, "", 10).catch(() => [] as TasteHit[]),
-        insights("restaurant", ids, location, 10).catch(() => [] as TasteHit[]),
-        insights("music", ids, "", 10).catch(() => [] as TasteHit[]),
-      ]);
-      return { member: m, ids: new Set([...movie, ...restaurant, ...music].map((h) => h.entityId)) };
-    })
-  );
-
-  // Score each candidate by member overlap
   for (const hits of [candidates.movie, candidates.restaurant, candidates.music]) {
     for (const h of hits) {
       if (!h.entityId) continue;
-      const matched = personal.filter((p) => p.ids.has(h.entityId)).length;
-      scores.set(h.entityId, Math.round((matched / members.length) * 100));
+      const matched = new Set<string>();
+      for (const mf of h.matchedFavorites ?? []) {
+        const full = byLower.get(mf.split(":")[0].trim().toLowerCase());
+        if (full) matched.add(full);
+      }
+      scores.set(h.entityId, Math.round((matched.size / members.length) * 100));
     }
   }
   return scores;
@@ -494,7 +805,34 @@ export async function debugQloo(): Promise<Record<string, unknown>> {
     }
   }
   out.search_tests = searchTests;
-  // 2b. Resolve demo favorites and test insights WITH real signals
+  // 2. Taste Blend end-to-end: demo squad -> real picks (no Insights needed)
+  try {
+    const demoFavs = [
+      { member: "A", favorite: "Interstellar" },
+      { member: "B", favorite: "Dune" },
+      { member: "A", favorite: "biryani" },
+      { member: "B", favorite: "A.R. Rahman" },
+    ];
+    const t0 = Date.now();
+    const plan = await tasteBlend(demoFavs, "Pune");
+    const blendOut: Record<string, unknown> = {
+      ok: true,
+      engine: plan.engine,
+      ms: Date.now() - t0,
+    };
+    for (const cat of ["movie", "restaurant", "music"] as const) {
+      const hits = plan[cat];
+      blendOut[cat] = {
+        count: hits.length,
+        first: hits[0]?.name?.slice(0, 50) ?? null,
+        affinity: hits[0]?.matchedFavorites?.length ?? 0,
+      };
+    }
+    out.taste_blend = blendOut;
+  } catch (e) {
+    out.taste_blend = { ok: false, error: (e as Error).message.slice(0, 200) };
+  }
+  // 3. Insights status (known-broken on hackathon endpoint — informational)
   try {
     const demoFavs = ["Interstellar", "A.R. Rahman", "biryani"];
     const resolvedIds: string[] = [];

@@ -13,11 +13,12 @@ export interface SavedPlan {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   plan: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  trendingTwist: any;
+  variants: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   itinerary: any;
   itineraryAI: boolean;
   qloo: string;
+  engine?: string;
   members: number;
   generatedAt: string;
 }

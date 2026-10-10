@@ -136,33 +136,6 @@ function TasteDNACard({ dna }: { dna: TasteDNA }) {
   );
 }
 
-function TrendingTwist({ twist }: { twist: PlanResult["trendingTwist"] }) {  const items = [
-    { hit: twist.movie, label: "🎬 Trending film" },
-    { hit: twist.restaurant, label: "🍽️ Trending spot" },
-    { hit: twist.music, label: "🎵 Trending sound" },
-  ].filter((x) => x.hit);
-  if (items.length === 0) return null;
-  return (
-    <div className="mb-10">
-      <h2 className="font-display font-bold text-xl mb-1">🔥 Trending twist</h2>
-      <p className="text-white/45 text-sm mb-4">
-        Fresh from Qloo Trends — swap one of these in if you're feeling adventurous.
-      </p>
-      <div className="grid md:grid-cols-3 gap-3">
-        {items.map(({ hit, label }) => (
-          <div key={label} className="card !p-4">
-            <p className="text-xs text-white/40 mb-1">{label}</p>
-            <p className="font-bold">{cleanName(hit!.name)}</p>
-            {hit!.description && (
-              <p className="text-white/50 text-xs mt-1">{cleanName(hit!.description)}</p>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function Narrative({ text, ai }: { text?: string; ai?: boolean }) {
   if (!text) return null;
   return (
@@ -289,7 +262,7 @@ function Voting({ squadId }: { squadId: string }) {
 }
 
 function Variants({ variants }: { variants: PlanResult["variants"] }) {
-  const [tab, setTab] = useState<"consensus" | "trending" | "wildcard">("consensus");
+  const [tab, setTab] = useState<"consensus" | "gems" | "wildcard">("consensus");
   if (!variants) return null;
   const v: PlanVariant | undefined = variants[tab];
   if (!v) return null;
@@ -303,7 +276,7 @@ function Variants({ variants }: { variants: PlanResult["variants"] }) {
       <h2 className="font-display font-bold text-xl mb-1">🎭 Pick your flavor</h2>
       <p className="text-white/45 text-sm mb-4">Same taste data, three ways to play it.</p>
       <div className="flex gap-2 mb-4">
-        {(Object.keys(variants) as Array<"consensus" | "trending" | "wildcard">).map((k) => (
+        {(Object.keys(variants) as Array<"consensus" | "gems" | "wildcard">).map((k) => (
           <button
             key={k}
             onClick={() => setTab(k)}
@@ -397,7 +370,7 @@ export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => 
     <div className="max-w-2xl mx-auto px-4 pt-10 pb-20">
       <div className="text-center mb-8">
         <div className="chip mb-4">
-          {result.qloo === "mock" ? "🧪 demo mode" : "🧬 Qloo taste graph"} · {result.members} member
+          {result.qloo === "mock" ? "🧪 demo mode" : result.engine === "blend" ? "🧬 Qloo taste data · SquadVibe blend" : "🧬 Qloo taste graph"} · {result.members} member
           {result.members > 1 ? "s" : ""}
         </div>
         <h1 className="font-display text-4xl font-extrabold">
@@ -426,8 +399,6 @@ export default function PlanPage({ id, nav }: { id: string; nav: (h: string) => 
           </div>
         </div>
       ))}
-
-      <TrendingTwist twist={result.trendingTwist} />
 
       <Variants variants={result.variants} />
 

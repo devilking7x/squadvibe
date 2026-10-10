@@ -40,14 +40,14 @@ export interface PlanVariant {
 
 export interface PlanResult {
   plan: Plan;
-  trendingTwist: { movie: TasteHit | null; restaurant: TasteHit | null; music: TasteHit | null };
-  variants?: { consensus: PlanVariant; trending: PlanVariant; wildcard: PlanVariant };
+  variants?: { consensus: PlanVariant; gems: PlanVariant; wildcard: PlanVariant };
   itinerary: ItineraryStop[];
   itineraryAI: boolean;
   tasteDNA: TasteDNA;
   narrative?: string;
   narrativeAI?: boolean;
   qloo: string;
+  engine?: string;
   members: number;
 }
 

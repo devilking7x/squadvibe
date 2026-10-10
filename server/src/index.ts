@@ -13,7 +13,6 @@ import {
   squadAffinity,
   squadPlan,
   tasteDNA,
-  trending,
   vibeScore,
 } from "./qloo.js";
 import {
@@ -165,12 +164,7 @@ app.post("/api/squads/:id/plan", async (req, res) => {
       s.location
     ).catch(() => new Map<string, number>());
 
-    const [trendLists, itinerary, narration, enrichment] = await Promise.all([
-      Promise.all([
-        trending("movie", "", 1).catch(() => []),
-        trending("restaurant", s.location, 1).catch(() => []),
-        trending("music", "", 1).catch(() => []),
-      ]),
+    const [itinerary, narration, enrichment] = await Promise.all([
       buildItinerary(s.name, s.vibe, s.location, result.movie, result.restaurant, result.music),
       narratePlan(
         s.name,
@@ -211,18 +205,12 @@ app.post("/api/squads/:id/plan", async (req, res) => {
       }),
     };
 
-    // Trending twist: one fresh pick per category
-    const twist = {
-      movie: trendLists[0][0] ?? null,
-      restaurant: trendLists[1][0] ?? null,
-      music: trendLists[2][0] ?? null,
-    };
-
     // Squad Taste DNA — visual fingerprint of the combined taste
     const dna = tasteDNA(result.resolved);
 
     // 3 Vibe Variants — same taste data, three flavors (no extra Qloo calls)
     const pickTop = <T>(arr: T[], n: number) => arr.slice(0, n);
+    const pickGems = <T>(arr: T[], n: number) => arr.slice(2, 2 + n);
     const pickRandom = <T>(arr: T[], n: number) => {
       const copy = [...arr];
       for (let i = copy.length - 1; i > 0; i--) {
@@ -239,12 +227,12 @@ app.post("/api/squads/:id/plan", async (req, res) => {
         restaurant: pickTop(planOut.restaurant, 2),
         music: pickTop(planOut.music, 2),
       },
-      trending: {
-        label: "🔥 Trending Now",
-        desc: "What's hot right now, filtered by your squad's taste",
-        movie: twist.movie ? [twist.movie] : [],
-        restaurant: twist.restaurant ? [twist.restaurant] : [],
-        music: twist.music ? [twist.music] : [],
+      gems: {
+        label: "💎 Hidden Gems",
+        desc: "Lower-profile picks your squad's taste still endorses",
+        movie: pickGems(planOut.movie, 2),
+        restaurant: pickGems(planOut.restaurant, 2),
+        music: pickGems(planOut.music, 2),
       },
       wildcard: {
         label: "🎲 Wild Card",
@@ -259,7 +247,6 @@ app.post("/api/squads/:id/plan", async (req, res) => {
 
     const saved = {
       plan: planOut,
-      trendingTwist: twist,
       variants,
       itinerary: itinerary.stops,
       itineraryAI: itinerary.ai,
@@ -267,6 +254,7 @@ app.post("/api/squads/:id/plan", async (req, res) => {
       narrative: narration.narrative,
       narrativeAI: narration.ai,
       qloo: qlooMode(),
+      engine: result.engine ?? "blend",
       members: s.members.length,
       generatedAt: new Date().toISOString(),
     };
