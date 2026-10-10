@@ -439,9 +439,9 @@ async function blendCategory(
     for (const k of cand.keywords) if (kwCount.has(k)) kwOverlap++;
     const keywordOverlap = cand.keywords.length ? kwOverlap / cand.keywords.length : 0;
     const fromQuery = (sourceMembers.get(cand.id)?.size ?? 0) > 0;
-    // Restaurants: location-relevant picks get a bonus (a Mumbai biryani joint
-    // beats a Polish Pizza Hut for a Mumbai squad).
-    const localBonus = category === "restaurant" && localHits.has(cand.id) ? 0.15 : 0;
+    // Restaurants: location-relevant picks get a big bonus (a Mumbai biryani joint
+    // beats a Polish Pizza Hut for a Mumbai squad — even if the chain is popular).
+    const localBonus = category === "restaurant" && localHits.has(cand.id) ? 0.35 : 0;
     const score = coverage * 0.4 + coreMatch * 0.4 + cand.popularity * 0.2 + localBonus;
     return { cand, score, coreMatch, keywordOverlap, fromQuery, matchedFav: matchedFav.slice(0, 4) };
   });
