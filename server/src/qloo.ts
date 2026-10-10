@@ -819,6 +819,7 @@ export async function debugQloo(): Promise<Record<string, unknown>> {
       ok: true,
       engine: plan.engine,
       ms: Date.now() - t0,
+      resolved: plan.resolved.map((r) => `${r.favorite}:${r.types.join("+")}`),
     };
     for (const cat of ["movie", "restaurant", "music"] as const) {
       const hits = plan[cat];
