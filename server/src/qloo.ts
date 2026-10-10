@@ -373,7 +373,23 @@ async function blendCategory(
   if (process.env.BLEND_DEBUG) {
     console.log(`[blend:${category}] core=${[...effectiveCore].join(",")} terms=${topTerms.join("|")} seen=${seen.size} gated=${gated.length}`);
   }
-  return gated.slice(0, 5).map((s) => tasteHit(s.cand, category, s.matchedFav));
+  // Diversity pass: every member deserves at least one pick in the top 5.
+  // (A diverse squad's "intersection" is honest per-person representation,
+  // not five copies of one member's taste.)
+  const memberOf = (mf: string): string => mf.split(":")[0].trim();
+  const top = gated.slice(0, 5);
+  const covered = new Set<string>();
+  for (const s of top) for (const mf of s.matchedFav) covered.add(memberOf(mf));
+  for (const member of members) {
+    if (covered.has(member)) continue;
+    const best = gated.find((s) => s.matchedFav.some((mf) => memberOf(mf) === member));
+    if (best && !top.includes(best)) {
+      top[top.length - 1] = best;
+      covered.add(member);
+    }
+  }
+  top.sort((a, b) => b.score - a.score);
+  return top.map((s) => tasteHit(s.cand, category, s.matchedFav));
 }
 
 async function searchEntitiesWithTypes(
