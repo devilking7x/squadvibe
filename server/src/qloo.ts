@@ -426,7 +426,9 @@ async function blendCategory(
   const gated = scored.filter((s) =>
     category === "restaurant"
       ? s.coreMatch > 0 || s.keywordOverlap > 0 || s.fromQuery
-      : s.coreMatch > 0
+      : category === "music"
+        ? s.coreMatch > 0 || s.fromQuery  // diverse artists: query-source counts
+        : s.coreMatch > 0
   );
   if (process.env.BLEND_DEBUG) {
     console.log(`[blend:${category}] core=${[...effectiveCore].join(",")} terms=${topTerms.map((t) => t.term).join("|")} seen=${seen.size} gated=${gated.length}`);
