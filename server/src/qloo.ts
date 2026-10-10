@@ -372,6 +372,7 @@ async function blendCategory(
 
   const seen = new Map<string, EntityTaste>();
   const sourceMembers = new Map<string, Set<string>>(); // entityId -> members whose query found it
+  const localHits = new Set<string>(); // entityId -> found via location-biased query
   const excludeIds = new Set(useInputs.map((i) => i.taste.id));
   const excludeNames = new Set(useInputs.map((i) => norm(i.taste.name)));
   await Promise.all(
@@ -380,6 +381,7 @@ async function blendCategory(
       // Restaurants: bias top terms with location (not all — saves API calls)
       if (category === "restaurant" && location.trim() && idx < 2) {
         const loc = await searchDetailed(`${term} ${location.trim()}`, category, 8);
+        for (const c of loc) localHits.add(c.id);
         cands = [...cands, ...loc];
       }
       for (const c of cands) {
@@ -437,7 +439,10 @@ async function blendCategory(
     for (const k of cand.keywords) if (kwCount.has(k)) kwOverlap++;
     const keywordOverlap = cand.keywords.length ? kwOverlap / cand.keywords.length : 0;
     const fromQuery = (sourceMembers.get(cand.id)?.size ?? 0) > 0;
-    const score = coverage * 0.4 + coreMatch * 0.4 + cand.popularity * 0.2;
+    // Restaurants: location-relevant picks get a bonus (a Mumbai biryani joint
+    // beats a Polish Pizza Hut for a Mumbai squad).
+    const localBonus = category === "restaurant" && localHits.has(cand.id) ? 0.15 : 0;
+    const score = coverage * 0.4 + coreMatch * 0.4 + cand.popularity * 0.2 + localBonus;
     return { cand, score, coreMatch, keywordOverlap, fromQuery, matchedFav: matchedFav.slice(0, 4) };
   });
   scored.sort((a, b) => b.score - a.score);
