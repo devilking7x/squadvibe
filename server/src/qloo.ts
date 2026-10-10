@@ -178,7 +178,7 @@ function tasteHit(t: EntityTaste, category: string, matchedFavorites?: string[])
   };
 }
 
-const NON_DINING = /mall|zoo|hotel|park|museum|theater|theatre|campus|hospital|airport|station|fort|ghat|mountain|temple|beach|waterfall|garden|lake|dam|bridge/i;
+const NON_DINING = /mall|zoo|hotel|park|museum|theater|theatre|campus|hospital|airport|station|fort|ghat|mountain|temple|beach|waterfall|garden|lake|dam|bridge|birthplace|memorial|monument|palace|church|mosque|shrine/i;
 
 interface BlendInput {
   member: string;
@@ -360,6 +360,12 @@ async function blendCategory(
       }
       for (const c of cands) {
         if (category === "restaurant" && NON_DINING.test(c.name + " " + c.description)) continue;
+        // Music: skip generic single-word "artists" that are just genre names
+        // ("Folk", "Rock") — junk entities, not real recommendations.
+        if (category === "music" && /^[a-z]+$/i.test(c.name.trim()) && c.name.trim().length <= 12) {
+          const w = norm(c.name);
+          if (genreCount.has(w) || kwCount.has(w)) continue;
+        }
         if (excludeIds.has(c.id) || excludeNames.has(norm(c.name))) continue;
         if (!seen.has(c.id)) seen.set(c.id, c);
         if (member) {
@@ -528,7 +534,6 @@ async function insights(
     .map((e) => mapEntity(e, category));
   // For restaurants, filter out non-dining places (malls, zoos, hotels, etc.)
   if (category === "restaurant") {
-    const NON_DINING = /mall|zoo|hotel|park|museum|theater|theatre|campus|hospital|airport|station|fort|ghat|mountain|temple|beach|waterfall|garden|lake|dam|bridge/i;
     const filtered = hits.filter((h) => !NON_DINING.test(h.name + " " + h.description));
     return filtered.slice(0, limit);
   }
