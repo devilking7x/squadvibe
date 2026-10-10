@@ -298,12 +298,23 @@ async function blendCategory(
       .filter((k) => !JUNK_KW.test(k) && k.split(/\s+/).length <= 4)
       .slice(0, 4);
   } else {
-    kwTerms = [];
+    // Diverse squad, no shared keywords (pizza vs sushi vs biryani):
+    // take top keywords per member so every taste gets candidates.
+    // Coverage scoring ranks them; a 1/3 pick beats zero picks.
+    const perMember = new Map<string, string[]>();
+    for (const inp of useInputs) {
+      const arr = perMember.get(inp.member) ?? [];
+      for (const k of inp.taste.keywords) {
+        if (!JUNK_KW.test(k) && !arr.includes(k) && arr.length < 2) arr.push(k);
+      }
+      perMember.set(inp.member, arr);
+    }
+    kwTerms = [...perMember.values()].flat().slice(0, 6);
   }
   const topTerms = [
     ...kwTerms,
     ...[...genreCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([g]) => g),
-  ].slice(0, 4); // cap API calls — Qloo rate-limits aggressive fan-out
+  ].slice(0, 6); // cap API calls — Qloo rate-limits aggressive fan-out
   if (!topTerms.length) topTerms.push(category === "restaurant" ? location || "restaurant" : category);
 
   const seen = new Map<string, EntityTaste>();
