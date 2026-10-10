@@ -286,42 +286,72 @@ async function blendCategory(
       if (JUNK_KW.test(k)) continue; // "title directed by male" etc. are noise
       kwCount.set(k, (kwCount.get(k) ?? 0) + 1);
     }
-  let kwTerms: string[];
+  // Terms with source tracking: {term, member} — member=null means squad-wide.
+  // This lets a candidate found via B's "sushi" query count as covering B,
+  // even without keyword overlap (the query itself is the relevance signal).
+  let termSources: Array<{ term: string; member: string | null }>;
   const sharedKw = [...kwCount.entries()].filter(([, c]) => c > 1);
   if (sharedKw.length) {
-    kwTerms = sharedKw
+    termSources = sharedKw
       .sort((a, b) => b[1] - a[1] || b[0].split(/\s+/).length - a[0].split(/\s+/).length)
       .slice(0, 4)
-      .map(([k]) => k);
+      .map(([k]) => ({ term: k, member: null }));
   } else if (useInputs.length <= 1) {
-    kwTerms = [...kwCount.keys()]
+    termSources = [...kwCount.keys()]
       .filter((k) => !JUNK_KW.test(k) && k.split(/\s+/).length <= 4)
-      .slice(0, 4);
+      .slice(0, 4)
+      .map((k) => ({ term: k, member: null }));
   } else {
-    // Diverse squad, no shared keywords (pizza vs sushi vs biryani):
-    // take top keywords per member so every taste gets candidates.
-    // Coverage scoring ranks them; a 1/3 pick beats zero picks.
-    const perMember = new Map<string, string[]>();
+    // Diverse squad: per-member terms, raw favorite text first.
+    // Round-robin: every member gets their favorite as a query FIRST,
+    // then keywords. (Promise.all resolves inputs in random order, so a
+    // global cap would starve some members.)
+    termSources = [];
+    const seenTerms = new Set<string>();
+    // Round 1: each member's favorite text
     for (const inp of useInputs) {
-      const arr = perMember.get(inp.member) ?? [];
-      for (const k of inp.taste.keywords) {
-        if (!JUNK_KW.test(k) && !arr.includes(k) && arr.length < 2) arr.push(k);
+      if (inp.favorite.split(/\s+/).length <= 3 && !seenTerms.has(inp.favorite)) {
+        seenTerms.add(inp.favorite);
+        termSources.push({ term: inp.favorite, member: inp.member });
       }
-      perMember.set(inp.member, arr);
     }
-    kwTerms = [...perMember.values()].flat().slice(0, 6);
+    // Round 2: keywords, round-robin per member
+    const kwByMember = useInputs.map((inp) =>
+      inp.taste.keywords.filter((k) => !JUNK_KW.test(k)).slice(0, 2)
+    );
+    let added = true;
+    while (added && termSources.length < 6) {
+      added = false;
+      for (let i = 0; i < useInputs.length && termSources.length < 6; i++) {
+        const kws = kwByMember[i];
+        if (kws.length) {
+          const k = kws.shift()!;
+          if (!seenTerms.has(k)) {
+            seenTerms.add(k);
+            termSources.push({ term: k, member: useInputs[i].member });
+            added = true;
+          }
+        }
+      }
+    }
   }
-  const topTerms = [
-    ...kwTerms,
-    ...[...genreCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([g]) => g),
-  ].slice(0, 6); // cap API calls — Qloo rate-limits aggressive fan-out
-  if (!topTerms.length) topTerms.push(category === "restaurant" ? location || "restaurant" : category);
+  // Genres backstop (squad-wide).
+  for (const [g] of [...genreCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2)) {
+    if (!termSources.some((ts) => ts.term === g)) termSources.push({ term: g, member: null });
+  }
+  const topTerms = termSources.slice(0, 6);
+  if (!topTerms.length)
+    topTerms.push({
+      term: category === "restaurant" ? location || "restaurant" : category,
+      member: null,
+    });
 
   const seen = new Map<string, EntityTaste>();
+  const sourceMembers = new Map<string, Set<string>>(); // entityId -> members whose query found it
   const excludeIds = new Set(useInputs.map((i) => i.taste.id));
   const excludeNames = new Set(useInputs.map((i) => norm(i.taste.name)));
   await Promise.all(
-    topTerms.map(async (term, idx) => {
+    topTerms.map(async ({ term, member }, idx) => {
       let cands = await searchDetailed(term, category, 10);
       // Restaurants: bias top terms with location (not all — saves API calls)
       if (category === "restaurant" && location.trim() && idx < 2) {
@@ -330,8 +360,13 @@ async function blendCategory(
       }
       for (const c of cands) {
         if (category === "restaurant" && NON_DINING.test(c.name + " " + c.description)) continue;
-        if (!seen.has(c.id) && !excludeIds.has(c.id) && !excludeNames.has(norm(c.name)))
-          seen.set(c.id, c);
+        if (excludeIds.has(c.id) || excludeNames.has(norm(c.name))) continue;
+        if (!seen.has(c.id)) seen.set(c.id, c);
+        if (member) {
+          const sm = sourceMembers.get(c.id) ?? new Set<string>();
+          sm.add(member);
+          sourceMembers.set(c.id, sm);
+        }
       }
     })
   );
@@ -346,6 +381,16 @@ async function blendCategory(
     const candTags = tagsOf(cand);
     const coveredMembers = new Set<string>();
     const matchedFav: string[] = [];
+    // Query-source signal: found via this member's own query ("sushi" query
+    // -> sushi places cover that member, even without keyword overlap).
+    for (const m of sourceMembers.get(cand.id) ?? []) {
+      coveredMembers.add(m);
+      const inp = useInputs.find((u) => u.member === m);
+      if (inp) {
+        const label = `${m}: ${inp.favorite}`;
+        if (!matchedFav.includes(label)) matchedFav.push(label);
+      }
+    }
     for (const inp of useInputs) {
       const inpTags = tagsOf(inp.taste);
       if ([...candTags].some((t) => inpTags.has(t))) {
@@ -361,17 +406,18 @@ async function blendCategory(
     let kwOverlap = 0;
     for (const k of cand.keywords) if (kwCount.has(k)) kwOverlap++;
     const keywordOverlap = cand.keywords.length ? kwOverlap / cand.keywords.length : 0;
+    const fromQuery = (sourceMembers.get(cand.id)?.size ?? 0) > 0;
     const score = coverage * 0.4 + coreMatch * 0.4 + cand.popularity * 0.2;
-    return { cand, score, coreMatch, keywordOverlap, matchedFav: matchedFav.slice(0, 4) };
+    return { cand, score, coreMatch, keywordOverlap, fromQuery, matchedFav: matchedFav.slice(0, 4) };
   });
   scored.sort((a, b) => b.score - a.score);
   const gated = scored.filter((s) =>
     category === "restaurant"
-      ? s.coreMatch > 0 || s.keywordOverlap > 0
+      ? s.coreMatch > 0 || s.keywordOverlap > 0 || s.fromQuery
       : s.coreMatch > 0
   );
   if (process.env.BLEND_DEBUG) {
-    console.log(`[blend:${category}] core=${[...effectiveCore].join(",")} terms=${topTerms.join("|")} seen=${seen.size} gated=${gated.length}`);
+    console.log(`[blend:${category}] core=${[...effectiveCore].join(",")} terms=${topTerms.map((t) => t.term).join("|")} seen=${seen.size} gated=${gated.length}`);
   }
   // Diversity pass: every member deserves at least one pick in the top 5.
   // (A diverse squad's "intersection" is honest per-person representation,
