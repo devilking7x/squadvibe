@@ -236,18 +236,17 @@ async function tasteBlend(
     })
   );
 
-  // 2. Per category: profile -> candidates -> scored picks
+  // 2. Per category: profile -> candidates -> scored picks.
+  // Sequential (not Promise.all): Qloo rate-limits burst fan-out.
   const out: SquadPlanResult = { movie: [], restaurant: [], music: [], resolved, engine: "blend" };
-  await Promise.all(
-    (["movie", "restaurant", "music"] as const).map(async (cat) => {
-      out[cat] = await blendCategory(
-        cat,
-        inputs.filter((i) => i.category === cat),
-        inputs,
-        location
-      );
-    })
-  );
+  for (const cat of ["movie", "restaurant", "music"] as const) {
+    out[cat] = await blendCategory(
+      cat,
+      inputs.filter((i) => i.category === cat),
+      inputs,
+      location
+    );
+  }
   return out;
 }
 
