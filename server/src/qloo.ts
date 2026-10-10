@@ -217,6 +217,10 @@ async function tasteBlend(
       const pool = withTaste.length ? withTaste : details;
       const richness = (t: EntityTaste): number => t.genres.length + t.keywords.length;
       const best = [...pool].sort((a, b) => {
+        // Entities without types are useless (can't categorize) — sink them.
+        const aTyped = a.types.length ? 0 : 1;
+        const bTyped = b.types.length ? 0 : 1;
+        if (aTyped !== bTyped) return aTyped - bTyped;
         const aExact = norm(a.name) === q ? 0 : 1;
         const bExact = norm(b.name) === q ? 0 : 1;
         if (aExact !== bExact) return aExact - bExact;
@@ -243,7 +247,6 @@ async function tasteBlend(
     out[cat] = await blendCategory(
       cat,
       inputs.filter((i) => i.category === cat),
-      inputs,
       location
     );
   }
@@ -253,16 +256,19 @@ async function tasteBlend(
 async function blendCategory(
   category: "movie" | "music" | "restaurant",
   catInputs: BlendInput[],
-  allInputs: BlendInput[],
   location: string
 ): Promise<TasteHit[]> {
-  const useInputs = catInputs.length ? catInputs : allInputs;
-  if (!useInputs.length) {
-    // No favorites at all — popular picks in the category.
-    const fallbackQuery = category === "movie" ? "film" : category === "music" ? "music" : location || "restaurant";
+  // If no category-specific favorites, do a generic popular search —
+  // NEVER blend other categories' taste (space movies ≠ space centers).
+  if (!catInputs.length) {
+    const fallbackQuery =
+      category === "movie" ? "award winning film"
+      : category === "music" ? "popular music"
+      : location ? `best restaurants ${location.trim()}` : "popular restaurants";
     const cands = await searchDetailed(fallbackQuery, category, 10);
     return cands.slice(0, 5).map((c) => tasteHit(c, category));
   }
+  const useInputs = catInputs;
 
   // Squad genre profile: genre -> how many favorites carry it.
   // CORE genres (shared by 2+ favorites, e.g. Sci-Fi for Interstellar+Dune)
