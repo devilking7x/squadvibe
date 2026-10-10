@@ -304,17 +304,17 @@ async function blendCategory(
   const topTerms = [
     ...kwTerms,
     ...[...genreCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([g]) => g),
-  ];
+  ].slice(0, 4); // cap API calls — Qloo rate-limits aggressive fan-out
   if (!topTerms.length) topTerms.push(category === "restaurant" ? location || "restaurant" : category);
 
   const seen = new Map<string, EntityTaste>();
   const excludeIds = new Set(useInputs.map((i) => i.taste.id));
   const excludeNames = new Set(useInputs.map((i) => norm(i.taste.name)));
   await Promise.all(
-    topTerms.map(async (term) => {
-      let cands = await searchDetailed(term, category, 12);
-      // Restaurants: bias search with location when available
-      if (category === "restaurant" && location.trim() && !/\blocation\b/i.test(term)) {
+    topTerms.map(async (term, idx) => {
+      let cands = await searchDetailed(term, category, 10);
+      // Restaurants: bias top terms with location (not all — saves API calls)
+      if (category === "restaurant" && location.trim() && idx < 2) {
         const loc = await searchDetailed(`${term} ${location.trim()}`, category, 8);
         cands = [...cands, ...loc];
       }
@@ -614,14 +614,9 @@ export async function squadPlan(
   if (!API_KEY) throw new Error("QLOO_API_KEY not configured");
 
   void vibe;
-  // Insights first (no-op while the endpoint returns 0), then Taste Blend.
-  try {
-    const via = await squadPlanViaInsights(favorites, location);
-    const total = via.movie.length + via.restaurant.length + via.music.length;
-    if (total > 0) return via;
-  } catch {
-    /* fall through to blend */
-  }
+  // Taste Blend directly — the hackathon Insights endpoint returns 0 for
+  // valid signals (verified Oct 2026). squadPlanViaInsights stays for when/if
+  // Qloo fixes it; /api/debug/qloo monitors the endpoint.
   return tasteBlend(favorites, location);
 }
 
