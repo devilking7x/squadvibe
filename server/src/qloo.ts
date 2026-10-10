@@ -6,6 +6,28 @@ const API_KEY = process.env.QLOO_API_KEY ?? "";
 const MOCK = process.env.QLOO_MOCK === "1";
 const BASE = (process.env.QLOO_API_URL ?? "https://hackathon.api.qloo.com/v2").replace(/\/+$/, "");
 
+// Rate limiter: Qloo 429s on burst fan-out. Max 4 concurrent, 150ms between starts.
+let active = 0;
+const queue: Array<() => void> = [];
+async function throttle<T>(fn: () => Promise<T>): Promise<T> {
+  if (active >= 4) await new Promise<void>((res) => queue.push(res));
+  active++;
+  try {
+    await new Promise((r) => setTimeout(r, 150));
+    return await fn();
+  } finally {
+    active--;
+    const next = queue.shift();
+    if (next) next();
+  }
+}
+
+async function qlooFetch(url: string, timeoutMs = 20000): Promise<Response> {
+  return throttle(() =>
+    fetch(url, { headers: headers(), signal: AbortSignal.timeout(timeoutMs) })
+  );
+}
+
 export interface TasteHit {
   name: string;
   entityId: string;
@@ -132,10 +154,7 @@ async function searchDetailed(
     types: URNS[category],
     limit: String(limit),
   });
-  const res = await fetch(`${BASE}/search?${params}`, {
-    headers: headers(),
-    signal: AbortSignal.timeout(20000),
-  });
+  const res = await qlooFetch(`${BASE}/search?${params}`);
   if (!res.ok) return [];
   const data = (await res.json()) as { results?: Array<Record<string, unknown>> };
   return (data.results ?? []).map(toTaste).filter((t) => t.id);
@@ -150,9 +169,8 @@ async function cachedTaste(query: string): Promise<EntityTaste[]> {
   if (hit && Date.now() - hit.at < ENTITY_TTL) return hit.taste;
   let taste: EntityTaste[] = [];
   try {
-    const res = await fetch(
-      `${BASE}/search?query=${encodeURIComponent(query)}&limit=3`,
-      { headers: headers(), signal: AbortSignal.timeout(20000) }
+    const res = await qlooFetch(
+      `${BASE}/search?query=${encodeURIComponent(query)}&limit=3`
     );
     if (res.ok) {
       const data = (await res.json()) as { results?: Array<Record<string, unknown>> };
@@ -456,9 +474,8 @@ async function searchEntitiesWithTypes(
   query: string,
   limit = 3
 ): Promise<Array<{ id: string; types: string[] }>> {
-  const res = await fetch(
-    `${BASE}/search?query=${encodeURIComponent(query)}&limit=${limit}`,
-    { headers: headers(), signal: AbortSignal.timeout(20000) }
+  const res = await qlooFetch(
+    `${BASE}/search?query=${encodeURIComponent(query)}&limit=${limit}`
   );
   if (!res.ok) return [];
   const data = (await res.json()) as {
@@ -524,11 +541,7 @@ async function insights(
     const entitiesParam = `signal.interests.entities=${signalIds.join(",")}`;
     queryString = queryString ? `${queryString}&${entitiesParam}` : entitiesParam;
   }
-  const res = await fetch(`${BASE}/insights?${queryString}`, {
-    method: "GET",
-    headers: headers(),
-    signal: AbortSignal.timeout(30000),
-  });
+  const res = await qlooFetch(`${BASE}/insights?${queryString}`, 30000);
   if (!res.ok) {
     const errBody = await res.text().catch(() => "");
     throw new Error(`Qloo insights ${res.status}: ${errBody.slice(0, 200)}`);
@@ -866,10 +879,7 @@ export async function debugQloo(): Promise<Record<string, unknown>> {
     ["with_type", `${BASE}/search?query=Interstellar&types=urn%3Aentity%3Amovie&limit=3`],
   ] as Array<[string, string]>) {
     try {
-      const res = await fetch(url, {
-        headers: headers(),
-        signal: AbortSignal.timeout(20000),
-      });
+      const res = await qlooFetch(url);
       const text = await res.text();
       let parsed: unknown = null;
       try { parsed = JSON.parse(text); } catch { /* raw */ }
