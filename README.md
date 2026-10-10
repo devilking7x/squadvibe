@@ -19,7 +19,7 @@ Every group has lived this: *"movie kaunsi dekhein?" "khana kahan khayein?"* —
 
 1. **Create a squad plan** — name it, pick a vibe (chill / party / cozy / adventure), add a location. You get a 6-letter squad code.
 2. **Everyone adds taste** — each friend drops 2–3 favorites (movies, artists, cuisines). Friends join with the code, no signup needed.
-3. **Qloo finds the overlap** — every favorite resolves to Qloo entity IDs; the Insights API finds picks matching the *combined* taste = the intersection the whole squad vibes with.
+3. **Taste Blend finds the overlap** — every favorite resolves to Qloo taste data (genres, keywords, popularity); the blend engine scores candidates by member coverage = the intersection the whole squad vibes with.
 4. **One perfect plan** — top movie + restaurant + music picks, each with a "why your squad will love it" explanation tracing back to members' favorites.
 
 ## Why this needs Qloo
@@ -30,7 +30,7 @@ Without Qloo, this is just vibes. With Qloo, it's science: cross-category taste 
 
 - **Frontend:** Vite + React + TypeScript + Tailwind (dark party theme)
 - **Backend:** Express + TypeScript
-- **Taste engine:** Qloo Search API (entity resolution) + Insights API (multi-signal recommendations)
+- **Taste engine:** Qloo Search API (entity resolution + taste data) → SquadVibe Taste Blend (member-coverage scoring, core-genre gating, diversity guarantee)
 - **Deploy:** Render (free tier), single service serving API + static web
 
 ## Run locally
